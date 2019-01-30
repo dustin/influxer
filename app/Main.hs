@@ -4,6 +4,7 @@
 module Main where
 
 import           Control.Concurrent.Async   (mapConcurrently_)
+import           Control.Exception          (IOException, catch)
 import           Control.Lens
 import           Control.Monad              (mapM_)
 import           Data.Aeson                 (Value (..), eitherDecode)
@@ -16,9 +17,10 @@ import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, unpack)
 import           Data.Time                  (UTCTime)
-import           Database.InfluxDB          (Field (..), Key, Line (..),
-                                             LineField, WriteParams (..), host,
-                                             server, write, writeParams)
+import           Database.InfluxDB          (Field (..), InfluxException (..),
+                                             Key, Line (..), LineField,
+                                             WriteParams (..), host, server,
+                                             write, writeParams)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), Topic, connectURI,
@@ -39,9 +41,11 @@ parseValue IgnoreVal _ = Left "ignored"
 
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
 handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t then e else o) undefined ws of
-                       Left "ignored" -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": ignored"]
+                       Left "ignored" -> pure ()
                        Left x -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
-                       Right l -> write wp l -- TODO: catch
+                       Right l -> catch (write wp l)
+                                  (\e -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " ,
+                                                             show (e :: InfluxException)])
   where
     extract :: Extractor -> Either String (Line UTCTime)
     extract (ValEx vp) = case parseValue vp v of
