@@ -6,7 +6,7 @@ module Main where
 import           Control.Concurrent.Async   (mapConcurrently_)
 import           Control.Lens
 import           Control.Monad              (mapM_)
-import           Data.Aeson
+import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.Map                   (Map)
@@ -16,9 +16,14 @@ import           Data.Scientific            (floatingOrInteger, toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, unpack)
 import           Data.Time                  (UTCTime)
-import           Database.InfluxDB
+import           Database.InfluxDB          (Field (..), Key, Line (..),
+                                             LineField, WriteParams (..), host,
+                                             server, write, writeParams)
 import qualified JSONPointer                as JP
-import           Network.MQTT.Client
+import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
+                                             QoS (..), Topic, connectURI,
+                                             mqttConfig, subscribe,
+                                             waitForClient)
 import           Text.Read                  (readEither)
 
 import           InfluxerConf
