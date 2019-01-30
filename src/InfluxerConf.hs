@@ -17,6 +17,7 @@ import           Text.Megaparsec.Char       (alphaNumChar, char, space, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
 
+
 import           Network.URI
 
 
@@ -31,7 +32,7 @@ data Watch = Watch Text Extractor deriving(Show)
 
 data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
-data JSONPExtractor = JSONPExtractor Text [(Text, ValueParser, Text)] deriving(Show)
+data JSONPExtractor = JSONPExtractor Text [(Text, Text, ValueParser)] deriving(Show)
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | IgnoreVal deriving(Show)
 
@@ -85,7 +86,8 @@ parseWatch = do
               pure $ JSONPExtractor m xs
 
 
-    parseX = (,,) <$> lexeme qstr <* symbol "<-" <*> parseValEx <*> lexeme qstr
+    parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
+      <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
 
 parseFile :: Parser a -> String -> IO a
 parseFile f s = do

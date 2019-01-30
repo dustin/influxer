@@ -58,11 +58,11 @@ handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t
     fk = fromString.unpack
 
     -- extract all the desired fields
-    jsonate :: Text -> [(Text,ValueParser,Text)] -> Value -> Either String (Line UTCTime)
+    jsonate :: Text -> [(Text,Text,ValueParser)] -> Value -> Either String (Line UTCTime)
     jsonate m l ob = Right $ Line (fk m) mempty (Map.fromList $ mapMaybe j1 l) Nothing
       where
-        j1 :: (Text,ValueParser,Text) -> Maybe (Key, LineField)
-        j1 (tag, vp, pstr) = let (Right p) = JP.unescape pstr in
+        j1 :: (Text,Text,ValueParser) -> Maybe (Key, LineField)
+        j1 (tag, pstr, vp) = let (Right p) = JP.unescape pstr in
                                case JP.resolve p ob of
                                  Left l  -> Nothing
                                  Right v -> (fk tag,) <$> jt vp v
