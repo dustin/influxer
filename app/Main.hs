@@ -12,7 +12,7 @@ import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.Map                   (Map)
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (mapMaybe)
-import           Data.Scientific            (floatingOrInteger, toRealFloat)
+import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, unpack)
 import           Data.Time                  (UTCTime)
@@ -28,35 +28,47 @@ import           Text.Read                  (readEither)
 
 import           InfluxerConf
 
+parseValue :: ValueParser -> BL.ByteString -> Either String LineField
+parseValue AutoVal v  = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue FloatVal v = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue IntVal v   = FieldInt . floor . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue BoolVal v
+  | v `elem` ["ON", "on", "true", "1"] = Right $ FieldBool True
+  | otherwise = Right $ FieldBool False
+parseValue IgnoreVal _ = Left "ignored"
+
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
 handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t then e else o) undefined ws of
-                       Left x  -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
+                       Left "ignored" -> pure ()
+                       Left x -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
                        Right l -> write wp l
   where
     extract :: Extractor -> Either String (Line UTCTime)
-    extract AutoEx = case readEither (BC.unpack v) of
-                       Left x  -> Left x
-                       Right v -> Right $ Line (fk t) mempty (Map.singleton "value" (st v)) Nothing
+    extract (ValEx vp) = case parseValue vp v of
+                                Left x  -> Left x
+                                Right v' -> Right $ Line (fk t) mempty (Map.singleton "value" v') Nothing
 
     extract (JSON (JSONPExtractor pre pats)) = jsonate pre pats =<< eitherDecode v
-
-    -- st = either FieldFloat FieldInt . floatingOrInteger
-    st = FieldFloat . toRealFloat
 
     fk :: IsString k => Text -> k
     fk = fromString.unpack
 
     -- extract all the desired fields
-    jsonate :: Text -> [(Text,Text)] -> Value -> Either String (Line UTCTime)
+    jsonate :: Text -> [(Text,ValueParser,Text)] -> Value -> Either String (Line UTCTime)
     jsonate m l ob = Right $ Line (fk m) mempty (Map.fromList $ mapMaybe j1 l) Nothing
       where
-        j1 :: (Text,Text) -> Maybe (Key, LineField)
-        j1 (tag, pstr) = let (Right p) = JP.unescape pstr in
-                           case JP.resolve p ob of
-                             Left l  -> Nothing
-                             Right v -> (fk tag,) <$> jt v
-        jt (Number x) = Just $ st x
-        jt _          = Nothing
+        j1 :: (Text,ValueParser,Text) -> Maybe (Key, LineField)
+        j1 (tag, vp, pstr) = let (Right p) = JP.unescape pstr in
+                               case JP.resolve p ob of
+                                 Left l  -> Nothing
+                                 Right v -> (fk tag,) <$> jt vp v
+
+        jt FloatVal (Number x) = Just $ FieldFloat . toRealFloat $ x
+        jt AutoVal (Number x)  = Just $ FieldFloat . toRealFloat $ x
+        jt AutoVal (Bool x)    = Just $ FieldBool x
+        jt IntVal (Number x)   = Just $ FieldInt . floor . toRealFloat $ x
+        jt BoolVal (Bool x)    = Just $ FieldBool x
+        jt _ _                 = Nothing
 
 runWatcher :: WriteParams -> Source -> IO ()
 runWatcher wp (Source uri watchers) = do

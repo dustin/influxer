@@ -32,7 +32,7 @@ data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
 data JSONPExtractor = JSONPExtractor Text [(Text, ValueParser, Text)] deriving(Show)
 
-data ValueParser = AutoVal | IntVal | FloatVal | BoolVal deriving(Show)
+data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | IgnoreVal deriving(Show)
 
 
 parseInfluxerConf :: Parser InfluxerConf
@@ -65,6 +65,7 @@ parseValEx = AutoVal <$ symbol "auto"
              <|> IntVal <$ symbol "int"
              <|> FloatVal <$ symbol "float"
              <|> BoolVal <$ symbol "bool"
+             <|> IgnoreVal <$ symbol "ignore"
 
 parseWatch :: Parser Watch
 parseWatch = do
