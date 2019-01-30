@@ -1,12 +1,12 @@
 from mqtt://localhost/#influxerdev {
      watch "orobridge/p1/tele/tea/SENSOR" jsonp {
            measurement "tea"
-           "total"      <- "/ENERGY/Total"
-           "yesterday"  <- "/ENERGY/Yesterday"
-           "today"      <- "/ENERGY/Today"
-           "power"      <- "/ENERGY/Power"
-           "voltage"    <- "/ENERGY/Voltage"
-           "current"    <- "/ENERGY/Current"
+           "total"      <- auto "/ENERGY/Total"
+           "yesterday"  <- auto "/ENERGY/Yesterday"
+           "today"      <- auto "/ENERGY/Today"
+           "power"      <- auto "/ENERGY/Power"
+           "voltage"    <- auto "/ENERGY/Voltage"
+           "current"    <- auto "/ENERGY/Current"
      }
      watch "sj/#"  auto
 }

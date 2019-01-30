@@ -28,9 +28,11 @@ data Source = Source URI [Watch] deriving(Show)
 
 data Watch = Watch Text Extractor deriving(Show)
 
-data Extractor = Auto | JSON JSONPExtractor deriving(Show)
+data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
-data JSONPExtractor = JSONPExtractor Text [(Text, Text)] deriving(Show)
+data JSONPExtractor = JSONPExtractor Text [(Text, ValueParser, Text)] deriving(Show)
+
+data ValueParser = AutoVal | IntVal | FloatVal | BoolVal deriving(Show)
 
 
 parseInfluxerConf :: Parser InfluxerConf
@@ -58,10 +60,16 @@ parseSrc = do
   ws <- between (symbol "{") (symbol "}") (some $ try parseWatch)
   pure $ Source u ws
 
+parseValEx :: Parser ValueParser
+parseValEx = AutoVal <$ symbol "auto"
+             <|> IntVal <$ symbol "int"
+             <|> FloatVal <$ symbol "float"
+             <|> BoolVal <$ symbol "bool"
+
 parseWatch :: Parser Watch
 parseWatch = do
   t <- (symbol "watch") *> lexeme qstr
-  x <- Auto <$ symbol "auto" <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
+  x <- (ValEx <$> try parseValEx) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch t x
 
   where
@@ -75,7 +83,7 @@ parseWatch = do
               pure $ JSONPExtractor m xs
 
 
-    parseX = (,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr
+    parseX = (,,) <$> lexeme qstr <* symbol "<-" <*> parseValEx <*> lexeme qstr
 
 parseFile :: Parser a -> String -> IO a
 parseFile f s = do

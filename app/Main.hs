@@ -34,9 +34,9 @@ handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t
                        Right l -> write wp l
   where
     extract :: Extractor -> Either String (Line UTCTime)
-    extract Auto = case readEither (BC.unpack v) of
-                     Left x  -> Left x
-                     Right v -> Right $ Line (fk t) mempty (Map.singleton "value" (st v)) Nothing
+    extract AutoEx = case readEither (BC.unpack v) of
+                       Left x  -> Left x
+                       Right v -> Right $ Line (fk t) mempty (Map.singleton "value" (st v)) Nothing
 
     extract (JSON (JSONPExtractor pre pats)) = jsonate pre pats =<< eitherDecode v
 
