@@ -33,6 +33,7 @@ dependencies:
 - scientific
 - time
 - lens
+- hslogger
 
 library:
   source-dirs: src

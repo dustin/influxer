@@ -10,6 +10,7 @@ import           Control.Monad              (mapM_)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
+import           Data.List                  (intercalate)
 import           Data.Map                   (Map)
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (mapMaybe)
@@ -26,6 +27,9 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), Topic, connectURI,
                                              mqttConfig, subscribe,
                                              waitForClient)
+import           System.Log.Logger          (Priority (INFO), errorM, infoM,
+                                             rootLoggerName, setLevel,
+                                             updateGlobalLogger)
 import           Text.Read                  (readEither)
 
 import           InfluxerConf
@@ -39,13 +43,16 @@ parseValue BoolVal v
   | otherwise = Right $ FieldBool False
 parseValue IgnoreVal _ = Left "ignored"
 
+logErr = errorM rootLoggerName
+
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
 handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p t then e else o) undefined ws of
                        Left "ignored" -> pure ()
-                       Left x -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
+                       Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
                        Right l -> catch (write wp l)
-                                  (\e -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " ,
-                                                             show (e :: InfluxException)])
+                                  (\e -> logErr $ mconcat ["error on ",
+                                                           unpack t, " -> ", show v, ": " ,
+                                                           show (e :: InfluxException)])
   where
     extract :: Extractor -> Either String (Line UTCTime)
     extract (ValEx vp) = case parseValue vp v of
@@ -77,13 +84,15 @@ handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p
 runWatcher :: WriteParams -> Source -> IO ()
 runWatcher wp (Source uri watchers) = do
   mc <- connectURI mqttConfig{_connID="influxer", _msgCB=Just $ handle wp watchers} uri
-  subrv <- subscribe mc [(t,QoS2) | (Watch w t _) <- watchers, w]
-  print subrv
-  print =<< waitForClient mc
+  let tosub = [(t,QoS2) | (Watch w t _) <- watchers, w]
+  subrv <- subscribe mc tosub
+  infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> maybe "ERR" show r) $ zip tosub subrv)
+  logErr . show =<< waitForClient mc
 
 main :: IO ()
 main = do
   -- TODO: flags
+  updateGlobalLogger rootLoggerName (setLevel INFO)
   (InfluxerConf srcs) <- parseConfFile "influx.conf"
   let wp = writeParams "influxer" & server.host .~ "localhost"
   mapConcurrently_ (runWatcher wp) srcs
