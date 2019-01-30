@@ -28,7 +28,7 @@ newtype InfluxerConf = InfluxerConf [Source] deriving(Show)
 data Source = Source URI [Watch] deriving(Show)
 
 -- TODO:  separate patterns from subscription
-data Watch = Watch Text Extractor deriving(Show)
+data Watch = Watch Bool Text Extractor deriving(Show)
 
 data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
@@ -71,9 +71,10 @@ parseValEx = AutoVal <$ symbol "auto"
 
 parseWatch :: Parser Watch
 parseWatch = do
-  t <- (symbol "watch") *> lexeme qstr
+  cons <- (True <$ symbol "watch") <|> (False <$ symbol "match")
+  t <- lexeme qstr
   x <- (ValEx <$> try parseValEx) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
-  pure $ Watch t x
+  pure $ Watch cons t x
 
   where
 

@@ -8,5 +8,9 @@ from mqtt://localhost/#influxerdev {
            "voltage"    <- "/ENERGY/Voltage"
            "current"    <- "/ENERGY/Current"
      }
+
+     // This one will match below, but we want to ignore the data.
+     match "sj/some/thing" ignore
+
      watch "sj/#"  auto
 }

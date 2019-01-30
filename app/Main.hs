@@ -40,7 +40,7 @@ parseValue BoolVal v
 parseValue IgnoreVal _ = Left "ignored"
 
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
-handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t then e else o) undefined ws of
+handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p t then e else o) undefined ws of
                        Left "ignored" -> pure ()
                        Left x -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
                        Right l -> catch (write wp l)
@@ -77,7 +77,7 @@ handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t
 runWatcher :: WriteParams -> Source -> IO ()
 runWatcher wp (Source uri watchers) = do
   mc <- connectURI mqttConfig{_connID="influxer", _msgCB=Just $ handle wp watchers} uri
-  subrv <- subscribe mc [(t,QoS2) | (Watch t _) <- watchers]
+  subrv <- subscribe mc [(t,QoS2) | (Watch w t _) <- watchers, w]
   print subrv
   print =<< waitForClient mc
 
