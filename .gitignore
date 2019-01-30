@@ -1,0 +1,4 @@
+*~
+.stack-work/
+influx.conf
+influxer.cabal
