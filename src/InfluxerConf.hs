@@ -26,6 +26,7 @@ newtype InfluxerConf = InfluxerConf [Source] deriving(Show)
 
 data Source = Source URI [Watch] deriving(Show)
 
+-- TODO:  separate patterns from subscription
 data Watch = Watch Text Extractor deriving(Show)
 
 data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)

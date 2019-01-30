@@ -39,9 +39,9 @@ parseValue IgnoreVal _ = Left "ignored"
 
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
 handle wp ws _ t v = case extract $ foldr (\(Watch p e) o -> if topicMatches p t then e else o) undefined ws of
-                       Left "ignored" -> pure ()
+                       Left "ignored" -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": ignored"]
                        Left x -> putStrLn $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
-                       Right l -> write wp l
+                       Right l -> write wp l -- TODO: catch
   where
     extract :: Extractor -> Either String (Line UTCTime)
     extract (ValEx vp) = case parseValue vp v of
@@ -79,6 +79,7 @@ runWatcher wp (Source uri watchers) = do
 
 main :: IO ()
 main = do
+  -- TODO: flags
   (InfluxerConf srcs) <- parseConfFile "influx.conf"
   let wp = writeParams "influxer" & server.host .~ "localhost"
   mapConcurrently_ (runWatcher wp) srcs
