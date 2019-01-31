@@ -38,7 +38,8 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- /Users/dsal/prog/eprojects/hjsonpointer
+- git: https://github.com/seagreen/hjsonpointer.git
+  commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
 - net-mqtt-0.2.2.0
 
 
