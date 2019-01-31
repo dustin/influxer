@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
 
 module Main where
@@ -13,26 +14,43 @@ import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.List                  (intercalate)
 import           Data.Map                   (Map)
 import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 (mapMaybe)
+import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
-import           Data.Text                  (Text, unpack)
+import           Data.Text                  (Text, pack, unpack)
 import           Data.Time                  (UTCTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..),
                                              Key, Line (..), LineField,
-                                             WriteParams (..), host, server,
-                                             write, writeParams)
+                                             WriteParams (..), formatDatabase,
+                                             host, server, write, writeParams)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), Topic, connectURI,
                                              mqttConfig, subscribe,
                                              waitForClient)
+import           Network.URI                (URI, parseURI)
+import           Options.Applicative        (Parser, execParser, fullDesc, help,
+                                             helper, info, long, maybeReader,
+                                             option, progDesc, showDefault,
+                                             strOption, value, (<**>))
 import           System.Log.Logger          (Priority (INFO), errorM, infoM,
                                              rootLoggerName, setLevel,
                                              updateGlobalLogger)
 import           Text.Read                  (readEither)
 
 import           InfluxerConf
+
+data Options = Options {
+  optInfluxDBHost :: Text
+  , optInfluxDB   :: String
+  , optConfFile   :: String
+  }
+
+options :: Parser Options
+options = Options
+  <$> strOption (long "dbhost" <> showDefault <> value "localhost" <> help "influxdb host")
+  <*> strOption (long "dbname" <> showDefault <> value "influxer" <> help "influxdb databse")
+  <*> strOption (long "conf" <> showDefault <> value "influx.conf" <> help "config file")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v  = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
@@ -89,10 +107,17 @@ runWatcher wp (Source uri watchers) = do
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> maybe "ERR" show r) $ zip tosub subrv)
   logErr . show =<< waitForClient mc
 
+run :: Options -> IO ()
+run Options{..} = do
+  (InfluxerConf srcs) <- parseConfFile optConfFile
+  let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
+  mapConcurrently_ (runWatcher wp) srcs
+
 main :: IO ()
 main = do
-  -- TODO: flags
   updateGlobalLogger rootLoggerName (setLevel INFO)
-  (InfluxerConf srcs) <- parseConfFile "influx.conf"
-  let wp = writeParams "influxer" & server.host .~ "localhost"
-  mapConcurrently_ (runWatcher wp) srcs
+
+  (run =<< execParser opts)
+
+  where opts = info (options <**> helper)
+          ( fullDesc <> progDesc "Influx the mqtt")

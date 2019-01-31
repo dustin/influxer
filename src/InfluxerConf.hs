@@ -1,7 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections     #-}
 
-module InfluxerConf where
+module InfluxerConf (
+  InfluxerConf(..),
+  Source(..),
+  Watch(..),
+  Extractor(..),
+  JSONPExtractor(..),
+  ValueParser(..),
+  parseConfFile,
+  topicMatches) where
 
 import           Control.Applicative        (empty, (<|>))
 import qualified Data.ByteString.Lazy       as BL
@@ -27,7 +35,6 @@ newtype InfluxerConf = InfluxerConf [Source] deriving(Show)
 
 data Source = Source URI [Watch] deriving(Show)
 
--- TODO:  separate patterns from subscription
 data Watch = Watch Bool Text Extractor deriving(Show)
 
 data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
