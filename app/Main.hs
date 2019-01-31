@@ -5,34 +5,31 @@
 module Main where
 
 import           Control.Concurrent.Async   (mapConcurrently_)
-import           Control.Exception          (IOException, catch)
+import           Control.Exception          (catch)
 import           Control.Lens
-import           Control.Monad              (mapM_)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.List                  (intercalate)
-import           Data.Map                   (Map)
 import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 (fromJust, mapMaybe)
+import           Data.Maybe                 (mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
-import           Data.Text                  (Text, pack, unpack)
+import           Data.Text                  (Text, unpack)
 import           Data.Time                  (UTCTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..),
                                              Key, Line (..), LineField,
-                                             WriteParams (..), formatDatabase,
-                                             host, server, write, writeParams)
+                                             WriteParams, host, server, write,
+                                             writeParams)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), Topic, connectURI,
                                              mqttConfig, subscribe,
                                              waitForClient)
-import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
-                                             helper, info, long, maybeReader,
-                                             option, progDesc, showDefault,
-                                             strOption, value, (<**>))
+                                             helper, info, long, progDesc,
+                                             showDefault, strOption, value,
+                                             (<**>))
 import           System.Log.Logger          (Priority (INFO), errorM, infoM,
                                              rootLoggerName, setLevel,
                                              updateGlobalLogger)
@@ -61,6 +58,7 @@ parseValue BoolVal v
   | otherwise = Right $ FieldBool False
 parseValue IgnoreVal _ = Left "ignored"
 
+logErr :: String -> IO ()
 logErr = errorM rootLoggerName
 
 handle :: WriteParams -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
@@ -77,7 +75,7 @@ handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p
                                 Left x  -> Left x
                                 Right v' -> Right $ Line (fk t) mempty (Map.singleton "value" v') Nothing
 
-    extract (JSON (JSONPExtractor pre pats)) = jsonate pre pats =<< eitherDecode v
+    extract (JSON (JSONPExtractor m pats)) = jsonate m pats =<< eitherDecode v
 
     fk :: IsString k => Text -> k
     fk = fromString.unpack
@@ -89,8 +87,8 @@ handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p
         j1 :: (Text,Text,ValueParser) -> Maybe (Key, LineField)
         j1 (tag, pstr, vp) = let (Right p) = JP.unescape pstr in
                                case JP.resolve p ob of
-                                 Left l  -> Nothing
-                                 Right v -> (fk tag,) <$> jt vp v
+                                 Left _   -> Nothing
+                                 Right v' -> (fk tag,) <$> jt vp v'
 
         jt FloatVal (Number x) = Just $ FieldFloat . toRealFloat $ x
         jt AutoVal (Number x)  = Just $ FieldFloat . toRealFloat $ x

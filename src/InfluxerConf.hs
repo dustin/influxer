@@ -11,17 +11,14 @@ module InfluxerConf (
   parseConfFile,
   topicMatches) where
 
-import           Control.Applicative        (empty, (<|>))
-import qualified Data.ByteString.Lazy       as BL
-import           Data.Map.Strict            (Map)
-import qualified Data.Map.Strict            as Map
-import           Data.Text                  (Text, dropEnd, dropWhileEnd, pack,
+import           Control.Applicative        ((<|>))
+import           Data.Text                  (Text, pack,
                                              splitOn)
 import           Data.Void                  (Void)
-import           Text.Megaparsec            (Parsec, between, endBy, eof,
-                                             manyTill, noneOf, option, parse,
-                                             sepBy, some, try)
-import           Text.Megaparsec.Char       (alphaNumChar, char, space, space1)
+import           Text.Megaparsec            (Parsec, between,
+                                             manyTill, noneOf, parse,
+                                             some, try)
+import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
 
