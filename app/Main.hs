@@ -73,13 +73,12 @@ handle wp spool ws _ t v = do
   case extract ts $ foldr (\(Watch _ p e) o -> if topicMatches p t then e else o) undefined ws of
     Left "ignored" -> pure ()
     Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
-    Right l -> catch (write wp l)
-      (\e -> do
-          logErr $ mconcat ["error on ",
-                            unpack t, " -> ", show v, ": ",
-                            show (e :: InfluxException)]
-          insertSpool spool l
-      )
+    Right l -> catch (write wp l) (\e -> do
+                                      let estr = show (e :: InfluxException)
+                                      logErr $ mconcat ["influx error on ",
+                                                        unpack t, " -> ", show v, ": ", estr]
+                                      insertSpool spool ts estr l
+                                  )
   where
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
     extract ts (ValEx vp) = case parseValue vp v of
@@ -125,8 +124,8 @@ runWatcher wp spool (Source uri watchers) = do
 run :: Options -> IO ()
 run Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
-  spool <- newSpool optSpoolFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
+  spool <- newSpool wp optSpoolFile
   mapConcurrently_ (runWatcher wp spool) srcs
 
 main :: IO ()
