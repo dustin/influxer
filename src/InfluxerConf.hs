@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections     #-}
 
 module InfluxerConf (
   InfluxerConf(..),
@@ -59,7 +58,7 @@ qstr = pack <$> (char '"' >> manyTill L.charLiteral (char '"'))
 
 parseSrc :: Parser Source
 parseSrc = do
-  ustr <- (symbol "from") *> lexeme (some (noneOf ['\n', ' ']))
+  ustr <- symbol "from" *> lexeme (some (noneOf ['\n', ' ']))
   let (Just u) = parseURI ustr
   ws <- between (symbol "{") (symbol "}") (some $ try parseWatch)
   pure $ Source u ws
@@ -85,7 +84,7 @@ parseWatch = do
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
 
       where parsePee = do
-              m <-  (symbol "measurement" *> lexeme qstr)
+              m <-  symbol "measurement" *> lexeme qstr
               xs <- some parseX
               pure $ JSONPExtractor m xs
 

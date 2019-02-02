@@ -7,8 +7,7 @@ import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async, async, cancel, link)
 import           Control.Exception        (catch)
 import           Control.Lens
-import           Control.Monad            (when)
-import           Control.Monad            (forever)
+import           Control.Monad            (forever, unless)
 import qualified Data.ByteString.Lazy     as BL
 import           Data.Time                (UTCTime, getCurrentTime)
 import           Database.InfluxDB        (InfluxException (..), Line (..),
@@ -55,7 +54,7 @@ newSpool wp fn = do
   pure $ Spool{..}
 
 runInserter :: WriteParams -> Connection -> IO ()
-runInserter wp conn = forever $ insertSome
+runInserter wp conn = forever insertSome
 
   where
     insertSome = do
@@ -63,11 +62,11 @@ runInserter wp conn = forever $ insertSome
       catch (do
                 writeByteString wp . mconcat . map ((<>"\n") . snd) $ rows
                 withTransaction conn $ executeMany conn removeStmt (map (Only . fst) rows)
-                when (length rows > 0) $ infoM "retry" ("processed backlog of " <> show (length rows))
+                unless (null rows) $ infoM "retry" ("processed backlog of " <> show (length rows))
             ) (reschedule (map fst rows))
 
 
-      threadDelay (if (length rows) > 0 then 0 else 60000000)
+      threadDelay (if null rows then 0 else 60000000)
 
     reschedule :: [Int] -> InfluxException -> IO ()
     reschedule ids e = do

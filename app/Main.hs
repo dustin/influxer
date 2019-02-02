@@ -56,9 +56,9 @@ options = Options
   <*> strOption (long "spool" <> showDefault <> value "influx.spool" <> help "spool file to store failed influxing")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
-parseValue AutoVal v    = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
-parseValue FloatVal v   = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
-parseValue IntVal v     = FieldInt . floor . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
+parseValue FloatVal v   = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
+parseValue IntVal v     = FieldInt . floor . toRealFloat <$> readEither (BC.unpack v)
 parseValue StringVal v  = (Right . FieldString . TE.decodeUtf8 . BL.toStrict) v
 parseValue BoolVal v
   | v `elem` ["ON", "on", "true", "1"] = Right $ FieldBool True
@@ -130,7 +130,7 @@ runWatcher wp spool (Source uri watchers) = do
   logErr . show =<< waitForClient mc
 
   where
-    cid ('#':[]) = "influxer"
+    cid ['#']    = "influxer"
     cid ('#':xs) = xs
     cid _        = "influxer"
 
@@ -145,7 +145,7 @@ main :: IO ()
 main = do
   updateGlobalLogger rootLoggerName (setLevel INFO)
 
-  (run =<< execParser opts)
+  run =<< execParser opts
 
   where opts = info (options <**> helper)
           ( fullDesc <> progDesc "Influx the mqtt")
