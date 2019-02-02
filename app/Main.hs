@@ -35,6 +35,7 @@ import           Options.Applicative        (Parser, execParser, fullDesc, help,
 import           System.Log.Logger          (Priority (INFO), errorM, infoM,
                                              rootLoggerName, setLevel,
                                              updateGlobalLogger)
+import           System.Timeout             (timeout)
 import           Text.Read                  (readEither)
 
 import           InfluxerConf
@@ -73,13 +74,25 @@ handle wp spool ws _ t v = do
   case extract ts $ foldr (\(Watch _ p e) o -> if topicMatches p t then e else o) undefined ws of
     Left "ignored" -> pure ()
     Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
-    Right l -> catch (write wp l) (\e -> do
-                                      let estr = show (e :: InfluxException)
-                                      logErr $ mconcat ["influx error on ",
-                                                        unpack t, " -> ", show v, ": ", estr]
-                                      insertSpool spool ts estr l
-                                  )
+    Right l -> do
+      exc <- deadlined 5000000 (tryWrite l)
+      case exc of
+        Just excuse -> do
+          logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", excuse]
+          insertSpool spool ts excuse l
+        Nothing     -> pure ()
+
   where
+    deadlined :: Int -> IO (Maybe String) -> IO (Maybe String)
+    deadlined n a = do
+      tod <- timeout n a
+      case tod of
+               Nothing -> pure $ Just "timed out"
+               Just x  -> pure x
+
+    tryWrite :: Line UTCTime -> IO (Maybe String)
+    tryWrite l = catch (Nothing <$ write wp l) (\e -> pure $ Just (show (e :: InfluxException)))
+
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
     extract ts (ValEx vp) = case parseValue vp v of
                               Left x  -> Left x
