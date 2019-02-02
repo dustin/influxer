@@ -35,6 +35,7 @@ dependencies:
 - lens
 - hslogger
 - optparse-applicative
+- sqlite-simple
 
 library:
   source-dirs: src
