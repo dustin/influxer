@@ -12,12 +12,10 @@ module InfluxerConf (
   topicMatches) where
 
 import           Control.Applicative        ((<|>))
-import           Data.Text                  (Text, pack,
-                                             splitOn)
+import           Data.Text                  (Text, pack, splitOn)
 import           Data.Void                  (Void)
-import           Text.Megaparsec            (Parsec, between,
-                                             manyTill, noneOf, parse,
-                                             some, try)
+import           Text.Megaparsec            (Parsec, between, manyTill, noneOf,
+                                             parse, some, try)
 import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
@@ -38,7 +36,7 @@ data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
 data JSONPExtractor = JSONPExtractor Text [(Text, Text, ValueParser)] deriving(Show)
 
-data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | IgnoreVal deriving(Show)
+data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show)
 
 
 parseInfluxerConf :: Parser InfluxerConf
@@ -71,6 +69,7 @@ parseValEx = AutoVal <$ symbol "auto"
              <|> IntVal <$ symbol "int"
              <|> FloatVal <$ symbol "float"
              <|> BoolVal <$ symbol "bool"
+             <|> StringVal <$ symbol "string"
              <|> IgnoreVal <$ symbol "ignore"
 
 parseWatch :: Parser Watch

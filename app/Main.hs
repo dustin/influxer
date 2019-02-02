@@ -16,6 +16,7 @@ import           Data.Maybe                 (mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, unpack)
+import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..),
                                              Key, Line (..), LineField,
@@ -50,13 +51,14 @@ options = Options
   <*> strOption (long "conf" <> showDefault <> value "influx.conf" <> help "config file")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
-parseValue AutoVal v  = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
-parseValue FloatVal v = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
-parseValue IntVal v   = FieldInt . floor . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue AutoVal v    = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue FloatVal v   = FieldFloat . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue IntVal v     = FieldInt . floor . toRealFloat <$> (readEither $ BC.unpack v)
+parseValue StringVal v  = (Right . FieldString . TE.decodeUtf8 . BL.toStrict) v
 parseValue BoolVal v
   | v `elem` ["ON", "on", "true", "1"] = Right $ FieldBool True
   | otherwise = Right $ FieldBool False
-parseValue IgnoreVal _ = Left "ignored"
+parseValue IgnoreVal _  = Left "ignored"
 
 logErr :: String -> IO ()
 logErr = errorM rootLoggerName
@@ -90,12 +92,13 @@ handle wp ws _ t v = case extract $ foldr (\(Watch _ p e) o -> if topicMatches p
                                  Left _   -> Nothing
                                  Right v' -> (fk tag,) <$> jt vp v'
 
-        jt FloatVal (Number x) = Just $ FieldFloat . toRealFloat $ x
-        jt AutoVal (Number x)  = Just $ FieldFloat . toRealFloat $ x
-        jt AutoVal (Bool x)    = Just $ FieldBool x
-        jt IntVal (Number x)   = Just $ FieldInt . floor . toRealFloat $ x
-        jt BoolVal (Bool x)    = Just $ FieldBool x
-        jt _ _                 = Nothing
+        jt FloatVal (Number x)  = Just $ FieldFloat . toRealFloat $ x
+        jt AutoVal (Number x)   = Just $ FieldFloat . toRealFloat $ x
+        jt AutoVal (Bool x)     = Just $ FieldBool x
+        jt IntVal (Number x)    = Just $ FieldInt . floor . toRealFloat $ x
+        jt BoolVal (Bool x)     = Just $ FieldBool x
+        jt StringVal (String x) = Just $ FieldString x
+        jt _ _                  = Nothing
 
 runWatcher :: WriteParams -> Source -> IO ()
 runWatcher wp (Source uri watchers) = do
