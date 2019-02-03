@@ -75,7 +75,7 @@ handle wp spool ws _ t v = do
     Left "ignored" -> pure ()
     Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
     Right l -> do
-      exc <- deadlined 5000000 (tryWrite l)
+      exc <- deadlined 15000000 (tryWrite l)
       case exc of
         Just excuse -> do
           logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", excuse]

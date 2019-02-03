@@ -35,7 +35,7 @@ insertStatement :: Query
 insertStatement = "insert into spool (ts, last_attempt, last_error, line) values (?, ?, ?, ?)"
 
 retryStmt :: Query
-retryStmt = "select id, line from spool where last_attempt < datetime('now', '-5 minutes') limit 100"
+retryStmt = "select id, line from spool where last_attempt < datetime('now', '-1 minute') limit 100"
 
 reschedStmt :: Query
 reschedStmt = "update spool set last_attempt = ?, last_error = ? where id = ?"
