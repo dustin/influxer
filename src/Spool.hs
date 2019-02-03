@@ -7,7 +7,7 @@ import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async, async, cancel, link)
 import           Control.Exception        (catch)
 import           Control.Lens
-import           Control.Monad            (forever, unless)
+import           Control.Monad            (forever, when, unless)
 import qualified Data.ByteString.Lazy     as BL
 import           Data.Time                (UTCTime, getCurrentTime)
 import           Database.InfluxDB        (InfluxException (..), Line (..),
@@ -46,6 +46,7 @@ removeStmt = "delete from spool where id = ?"
 newSpool :: WriteParams -> String -> IO Spool
 newSpool wp fn = do
   conn <- open fn
+  execute_ conn "pragma auto_vacuum = incremental"
   execute_ conn createStatement
 
   inserter <- async $ runInserter wp conn
@@ -65,8 +66,9 @@ runInserter wp conn = forever insertSome
                 unless (null rows) $ infoM "retry" ("processed backlog of " <> show (length rows))
             ) (reschedule (map fst rows))
 
-
-      threadDelay (if null rows then 0 else 60000000)
+      when (null rows) $ do
+        execute_ conn "pragma incremental_vacuum(100)"
+        threadDelay 60000000
 
     reschedule :: [Int] -> InfluxException -> IO ()
     reschedule ids e = do
