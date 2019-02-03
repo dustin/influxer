@@ -1,5 +1,5 @@
+*.conf
 *~
 .stack-work/
-influx.conf
 influx.spool
 influxer.cabal
