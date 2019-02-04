@@ -27,6 +27,7 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), Topic, connectURI,
                                              mqttConfig, subscribe,
                                              waitForClient)
+import           Network.MQTT.Topic         (match)
 import           Network.URI                (uriFragment)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, progDesc,
@@ -71,7 +72,7 @@ logErr = errorM rootLoggerName
 handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
 handle wp spool ws _ t v = do
   ts <- getCurrentTime
-  case extract ts $ foldr (\(Watch _ p e) o -> if topicMatches p t then e else o) undefined ws of
+  case extract ts $ foldr (\(Watch _ p e) o -> if p `match` t then e else o) undefined ws of
     Left "ignored" -> pure ()
     Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
     Right l -> do

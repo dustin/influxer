@@ -7,8 +7,7 @@ module InfluxerConf (
   Extractor(..),
   JSONPExtractor(..),
   ValueParser(..),
-  parseConfFile,
-  topicMatches) where
+  parseConfFile) where
 
 import           Control.Applicative        ((<|>))
 import           Data.Text                  (Text, pack, splitOn)
@@ -101,16 +100,3 @@ parseFile f s = do
 
 parseConfFile :: String -> IO InfluxerConf
 parseConfFile = parseFile parseInfluxerConf
-
-topicMatches :: Text -> Text -> Bool
-topicMatches pat top = cmp (splitOn "/" pat) (splitOn "/" top)
-
-  where
-    cmp [] []   = True
-    cmp [] _    = False
-    cmp _ []    = False
-    cmp ["#"] _ = True
-    cmp (p:ps) (t:ts)
-      | p == t = cmp ps ts
-      | p == "+" = cmp ps ts
-      | otherwise = False
