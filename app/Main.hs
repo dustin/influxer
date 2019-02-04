@@ -105,7 +105,9 @@ handle wp spool ws _ t v = do
 
     -- extract all the desired fields
     jsonate :: UTCTime -> Text -> [(Text,Text,ValueParser)] -> Value -> Either String (Line UTCTime)
-    jsonate ts m l ob = Right $ Line (fk m) mempty (Map.fromList $ mapMaybe j1 l) (Just ts)
+    jsonate ts m l ob = case mapMaybe j1 l of
+                          [] -> Left "I've got no values"
+                          vs -> Right $ Line (fk m) mempty (Map.fromList vs) (Just ts)
       where
         j1 :: (Text,Text,ValueParser) -> Maybe (Key, LineField)
         j1 (tag, pstr, vp) = let (Right p) = JP.unescape pstr in
