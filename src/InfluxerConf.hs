@@ -10,7 +10,7 @@ module InfluxerConf (
   parseConfFile) where
 
 import           Control.Applicative        ((<|>))
-import           Data.Text                  (Text, pack, splitOn)
+import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
 import           Text.Megaparsec            (Parsec, between, manyTill, noneOf,
                                              parse, some, try)
