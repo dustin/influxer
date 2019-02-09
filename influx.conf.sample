@@ -1,6 +1,6 @@
 from mqtt://localhost/#influxerdev {
-     watch "orobridge/p1/tele/tea/SENSOR" jsonp {
-           measurement "tea"
+     watch "oro/+/tele/SENSOR" jsonp {
+           measurement $1 // matches whatever string that + expands to
            "total"      <- "/ENERGY/Total"
            "yesterday"  <- "/ENERGY/Yesterday"
            "today"      <- "/ENERGY/Today"

@@ -7,6 +7,7 @@ module InfluxerConf (
   Extractor(..),
   JSONPExtractor(..),
   ValueParser(..),
+  MeasurementNamer(..),
   parseConfFile) where
 
 import           Control.Applicative        ((<|>))
@@ -32,7 +33,9 @@ data Watch = Watch Bool Text Extractor deriving(Show)
 
 data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
-data JSONPExtractor = JSONPExtractor Text [(Text, Text, ValueParser)] deriving(Show)
+data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show)
+
+data JSONPExtractor = JSONPExtractor MeasurementNamer [(Text, Text, ValueParser)] deriving(Show)
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show)
 
@@ -83,10 +86,12 @@ parseWatch = do
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
 
       where parsePee = do
-              m <-  symbol "measurement" *> lexeme qstr
+              m <-  symbol "measurement" *> ((ConstName <$> lexeme qstr) <|> (FieldNum <$> ref))
               xs <- some parseX
               pure $ JSONPExtractor m xs
 
+            ref :: Parser Int
+            ref = lexeme ("$" >> L.decimal)
 
     parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal

@@ -15,7 +15,7 @@ import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
-import           Data.Text                  (Text, unpack)
+import           Data.Text                  (Text, splitOn, unpack)
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..),
@@ -99,7 +99,11 @@ handle wp spool ws _ t v = do
                               Left x  -> Left x
                               Right v' -> Right $ Line (fk t) mempty (Map.singleton "value" v') (Just ts)
 
-    extract ts (JSON (JSONPExtractor m pats)) = jsonate ts m pats =<< eitherDecode v
+    extract ts (JSON (JSONPExtractor m pats)) = jsonate ts (mname m) pats =<< eitherDecode v
+
+    mname :: MeasurementNamer -> Text
+    mname (ConstName t') = t'
+    mname (FieldNum x) = (splitOn "/" t) !! x
 
     fk :: IsString k => Text -> k
     fk = fromString.unpack
