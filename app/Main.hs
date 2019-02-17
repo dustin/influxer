@@ -103,9 +103,9 @@ handle wp spool ws _ t v = do
     extract ts (JSON (JSONPExtractor m tags pats)) = jsonate ts (mname m) (mvals <$> tags) pats =<< eitherDecode v
 
     mname :: MeasurementNamer -> Text
-    mname (ConstName t')  = t'
-    mname (FieldNum (-1)) = t
-    mname (FieldNum x)    = (splitOn "/" t) !! x
+    mname (ConstName t') = t'
+    mname (FieldNum 0)   = t
+    mname (FieldNum x)   = (splitOn "/" t) !! (x-1)
 
     mvals :: (Text, MeasurementNamer) -> (Key, Key)
     mvals (a,m) = (fk a, fk . mname $ m)

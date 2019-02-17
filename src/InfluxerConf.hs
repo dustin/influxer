@@ -99,7 +99,7 @@ parseWatch = do
     parseField = option (ConstName "value") ("field=" *> parsemn)
 
     parseMsr :: Parser MeasurementNamer
-    parseMsr = option (FieldNum (-1)) ("measurement=" *> parsemn)
+    parseMsr = option (FieldNum 0) ("measurement=" *> parsemn)
 
     jsonpWatch :: Parser JSONPExtractor
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
