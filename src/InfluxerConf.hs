@@ -31,11 +31,13 @@ data Source = Source URI [Watch] deriving(Show)
 
 data Watch = Watch Bool Text Extractor deriving(Show)
 
-data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
+type Tags = [(Text,MeasurementNamer)]
+
+data Extractor = ValEx ValueParser Tags MeasurementNamer MeasurementNamer | JSON JSONPExtractor deriving(Show)
 
 data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show)
 
-data JSONPExtractor = JSONPExtractor MeasurementNamer [(Text,MeasurementNamer)] [(Text, Text, ValueParser)] deriving(Show)
+data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValueParser)] deriving(Show)
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show)
 
@@ -73,30 +75,40 @@ parseValEx = AutoVal <$ symbol "auto"
              <|> StringVal <$ symbol "string"
              <|> IgnoreVal <$ symbol "ignore"
 
+parsemn :: Parser MeasurementNamer
+parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> ref)
+  where
+    ref :: Parser Int
+    ref = lexeme ("$" >> L.decimal)
+
+parseTags :: Parser Tags
+parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` (symbol ","))
+  where
+    tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* symbol "=" <*> parsemn
+
 parseWatch :: Parser Watch
 parseWatch = do
   cons <- (True <$ symbol "watch") <|> (False <$ symbol "match")
   t <- lexeme qstr
-  x <- (ValEx <$> try parseValEx) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
+  x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch cons t x
 
   where
+
+    parseField :: Parser MeasurementNamer
+    parseField = option (ConstName "value") ("field=" *> parsemn)
+
+    parseMsr :: Parser MeasurementNamer
+    parseMsr = option (FieldNum (-1)) ("measurement=" *> parsemn)
 
     jsonpWatch :: Parser JSONPExtractor
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
 
       where parsePee = do
-              m <-  symbol "measurement" *> mn
-              tags <- option [] $ between (symbol "[") (symbol "]") (tag `sepBy` (symbol ","))
+              m <-  symbol "measurement" *> parsemn
+              tags <- parseTags
               xs <- some parseX
               pure $ JSONPExtractor m tags xs
-
-            mn = ((ConstName <$> lexeme qstr) <|> (FieldNum <$> ref))
-
-            ref :: Parser Int
-            ref = lexeme ("$" >> L.decimal)
-
-            tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* symbol "=" <*> mn
 
     parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal

@@ -95,19 +95,20 @@ handle wp spool ws _ t v = do
     tryWrite l = catch (Nothing <$ write wp l) (\e -> pure $ Just (show (e :: InfluxException)))
 
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
-    extract ts (ValEx vp) = case parseValue vp v of
+    extract ts (ValEx vp tags fld mn) = case parseValue vp v of
                               Left x  -> Left x
-                              Right v' -> Right $ Line (fk t) mempty (Map.singleton "value" v') (Just ts)
+                              Right v' -> Right $ Line (fk . mname $ mn) (Map.fromList $ mvals <$> tags)
+                                          (Map.singleton (fk $ mname fld) v') (Just ts)
 
     extract ts (JSON (JSONPExtractor m tags pats)) = jsonate ts (mname m) (mvals <$> tags) pats =<< eitherDecode v
 
     mname :: MeasurementNamer -> Text
-    mname (ConstName t') = t'
-    mname (FieldNum x)   = (splitOn "/" t) !! x
+    mname (ConstName t')  = t'
+    mname (FieldNum (-1)) = t
+    mname (FieldNum x)    = (splitOn "/" t) !! x
 
     mvals :: (Text, MeasurementNamer) -> (Key, Key)
-    mvals (a,m) = (kk a, kk . mname $ m)
-      where kk = fromString.unpack
+    mvals (a,m) = (fk a, fk . mname $ m)
 
     fk :: IsString k => Text -> k
     fk = fromString.unpack
