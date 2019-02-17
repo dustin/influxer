@@ -99,20 +99,24 @@ handle wp spool ws _ t v = do
                               Left x  -> Left x
                               Right v' -> Right $ Line (fk t) mempty (Map.singleton "value" v') (Just ts)
 
-    extract ts (JSON (JSONPExtractor m pats)) = jsonate ts (mname m) pats =<< eitherDecode v
+    extract ts (JSON (JSONPExtractor m tags pats)) = jsonate ts (mname m) (mvals <$> tags) pats =<< eitherDecode v
 
     mname :: MeasurementNamer -> Text
     mname (ConstName t') = t'
-    mname (FieldNum x) = (splitOn "/" t) !! x
+    mname (FieldNum x)   = (splitOn "/" t) !! x
+
+    mvals :: (Text, MeasurementNamer) -> (Key, Key)
+    mvals (a,m) = (kk a, kk . mname $ m)
+      where kk = fromString.unpack
 
     fk :: IsString k => Text -> k
     fk = fromString.unpack
 
     -- extract all the desired fields
-    jsonate :: UTCTime -> Text -> [(Text,Text,ValueParser)] -> Value -> Either String (Line UTCTime)
-    jsonate ts m l ob = case mapMaybe j1 l of
+    jsonate :: UTCTime -> Text -> [(Key,Key)] -> [(Text,Text,ValueParser)] -> Value -> Either String (Line UTCTime)
+    jsonate ts m tags l ob = case mapMaybe j1 l of
                           [] -> Left "I've got no values"
-                          vs -> Right $ Line (fk m) mempty (Map.fromList vs) (Just ts)
+                          vs -> Right $ Line (fk m) (Map.fromList tags) (Map.fromList vs) (Just ts)
       where
         j1 :: (Text,Text,ValueParser) -> Maybe (Key, LineField)
         j1 (tag, pstr, vp) = let (Right p) = JP.unescape pstr in

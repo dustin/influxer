@@ -14,7 +14,7 @@ import           Control.Applicative        ((<|>))
 import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
 import           Text.Megaparsec            (Parsec, between, manyTill, noneOf,
-                                             parse, some, try)
+                                             option, parse, sepBy, some, try)
 import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
@@ -35,7 +35,7 @@ data Extractor = ValEx ValueParser | JSON JSONPExtractor deriving(Show)
 
 data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show)
 
-data JSONPExtractor = JSONPExtractor MeasurementNamer [(Text, Text, ValueParser)] deriving(Show)
+data JSONPExtractor = JSONPExtractor MeasurementNamer [(Text,MeasurementNamer)] [(Text, Text, ValueParser)] deriving(Show)
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show)
 
@@ -86,12 +86,17 @@ parseWatch = do
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
 
       where parsePee = do
-              m <-  symbol "measurement" *> ((ConstName <$> lexeme qstr) <|> (FieldNum <$> ref))
+              m <-  symbol "measurement" *> mn
+              tags <- option [] $ between (symbol "[") (symbol "]") (tag `sepBy` (symbol ","))
               xs <- some parseX
-              pure $ JSONPExtractor m xs
+              pure $ JSONPExtractor m tags xs
+
+            mn = ((ConstName <$> lexeme qstr) <|> (FieldNum <$> ref))
 
             ref :: Parser Int
             ref = lexeme ("$" >> L.decimal)
+
+            tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* symbol "=" <*> mn
 
     parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
