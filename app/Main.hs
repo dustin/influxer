@@ -24,8 +24,9 @@ import           Database.InfluxDB          (Field (..), InfluxException (..),
                                              writeParams)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
-                                             QoS (..), Topic, connectURI,
-                                             mqttConfig, subscribe,
+                                             Property, QoS (..),
+                                             SubOptions (..), Topic, connectURI,
+                                             mqttConfig, subOptions, subscribe,
                                              waitForClient)
 import           Network.MQTT.Topic         (match)
 import           Network.URI                (uriFragment)
@@ -69,8 +70,8 @@ parseValue IgnoreVal _  = Left "ignored"
 logErr :: String -> IO ()
 logErr = errorM rootLoggerName
 
-handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> IO ()
-handle wp spool ws _ t v = do
+handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
+handle wp spool ws _ t v _ = do
   ts <- getCurrentTime
   case extract ts $ foldr (\(Watch _ p e) o -> if p `match` t then e else o) undefined ws of
     Left "ignored" -> pure ()
@@ -136,15 +137,18 @@ handle wp spool ws _ t v = do
 runWatcher :: WriteParams -> Spool -> Source -> IO ()
 runWatcher wp spool (Source uri watchers) = do
   mc <- connectURI mqttConfig{_connID=cid (uriFragment uri), _msgCB=Just $ handle wp spool watchers} uri
-  let tosub = [(t,QoS2) | (Watch w t _) <- watchers, w]
-  subrv <- subscribe mc tosub
-  infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> maybe "ERR" show r) $ zip tosub subrv)
+  let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
+  (subrv,_) <- subscribe mc tosub
+  infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   logErr . show =<< waitForClient mc
 
   where
     cid ['#']    = "influxer"
     cid ('#':xs) = xs
     cid _        = "influxer"
+
+    s (Left x)  = show x
+    s (Right x) = show x
 
 run :: Options -> IO ()
 run Options{..} = do
