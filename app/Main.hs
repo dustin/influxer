@@ -138,7 +138,7 @@ runWatcher :: WriteParams -> Spool -> Source -> IO ()
 runWatcher wp spool (Source uri watchers) = do
   mc <- connectURI mqttConfig{_connID=cid (uriFragment uri), _msgCB=Just $ handle wp spool watchers} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
-  (subrv,_) <- subscribe mc tosub
+  (subrv,_) <- subscribe mc tosub mempty
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   logErr . show =<< waitForClient mc
 
