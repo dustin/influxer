@@ -29,7 +29,6 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              mqttConfig, subOptions, subscribe,
                                              waitForClient)
 import           Network.MQTT.Topic         (match)
-import           Network.URI                (uriFragment)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, progDesc,
                                              showDefault, strOption, value,
@@ -136,19 +135,14 @@ handle wp spool ws _ t v _ = do
 
 runWatcher :: WriteParams -> Spool -> Source -> IO ()
 runWatcher wp spool (Source uri watchers) = do
-  mc <- connectURI mqttConfig{_connID=cid (uriFragment uri), _msgCB=Just $ handle wp spool watchers} uri
+  mc <- connectURI mqttConfig{_msgCB=Just $ handle wp spool watchers} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   logErr . show =<< waitForClient mc
 
   where
-    cid ['#']    = "influxer"
-    cid ('#':xs) = xs
-    cid _        = "influxer"
-
-    s (Left x)  = show x
-    s (Right x) = show x
+    s = either show show
 
 run :: Options -> IO ()
 run Options{..} = do
