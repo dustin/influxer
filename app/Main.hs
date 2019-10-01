@@ -25,14 +25,15 @@ import           Database.InfluxDB          (Field (..), InfluxException (..),
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              MessageCallback (..), Property,
-                                             QoS (..), SubOptions (..), Topic,
-                                             connectURI, mqttConfig, subOptions,
-                                             subscribe, waitForClient)
+                                             ProtocolLevel (..), QoS (..),
+                                             SubOptions (..), Topic, connectURI,
+                                             mqttConfig, subOptions, subscribe,
+                                             waitForClient)
 import           Network.MQTT.Topic         (match)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, progDesc,
-                                             showDefault, strOption, value,
-                                             (<**>))
+                                             short, showDefault, strOption,
+                                             switch, value, (<**>))
 import           System.Log.Logger          (Priority (INFO), errorM, infoM,
                                              rootLoggerName, setLevel,
                                              updateGlobalLogger)
@@ -47,6 +48,7 @@ data Options = Options {
   , optInfluxDB   :: String
   , optConfFile   :: String
   , optSpoolFile  :: String
+  , optV5         :: Bool
   }
 
 options :: Parser Options
@@ -55,6 +57,7 @@ options = Options
   <*> strOption (long "dbname" <> showDefault <> value "influxer" <> help "influxdb database")
   <*> strOption (long "conf" <> showDefault <> value "influx.conf" <> help "config file")
   <*> strOption (long "spool" <> showDefault <> value "influx.spool" <> help "spool file to store failed influxing")
+  <*> switch (long "mqtt5" <> short '5' <> help "Use MQTT5 by default")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
@@ -133,9 +136,10 @@ handle wp spool ws _ t v _ = do
         jt StringVal (String x) = Just $ FieldString x
         jt _ _                  = Nothing
 
-runWatcher :: WriteParams -> Spool -> Source -> IO ()
-runWatcher wp spool (Source uri watchers) = do
-  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle wp spool watchers} uri
+runWatcher :: WriteParams -> Spool -> Bool -> Source -> IO ()
+runWatcher wp spool p5 (Source uri watchers) = do
+  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle wp spool watchers,
+                              _protocol=prot p5} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
@@ -143,13 +147,15 @@ runWatcher wp spool (Source uri watchers) = do
 
   where
     s = either show show
+    prot True  = Protocol50
+    prot False = Protocol311
 
 run :: Options -> IO ()
 run Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   spool <- newSpool wp optSpoolFile
-  mapConcurrently_ (runWatcher wp spool) srcs
+  mapConcurrently_ (runWatcher wp spool optV5) srcs
 
 main :: IO ()
 main = do
