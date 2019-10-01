@@ -24,10 +24,10 @@ import           Database.InfluxDB          (Field (..), InfluxException (..),
                                              writeParams)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
-                                             Property, QoS (..),
-                                             SubOptions (..), Topic, connectURI,
-                                             mqttConfig, subOptions, subscribe,
-                                             waitForClient)
+                                             MessageCallback (..), Property,
+                                             QoS (..), SubOptions (..), Topic,
+                                             connectURI, mqttConfig, subOptions,
+                                             subscribe, waitForClient)
 import           Network.MQTT.Topic         (match)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, progDesc,
@@ -135,7 +135,7 @@ handle wp spool ws _ t v _ = do
 
 runWatcher :: WriteParams -> Spool -> Source -> IO ()
 runWatcher wp spool (Source uri watchers) = do
-  mc <- connectURI mqttConfig{_msgCB=Just $ handle wp spool watchers} uri
+  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle wp spool watchers} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
