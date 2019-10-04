@@ -12,7 +12,7 @@ import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
                                              registerDelay, retry, swapTVar)
 import           Control.Exception          (SomeException, catch)
 import           Control.Lens
-import           Control.Monad              (when)
+import           Control.Monad              (forever, when)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -200,7 +200,7 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
     prot True  = Protocol50
     prot False = Protocol311
 
-    periodicallyLog v = do
+    periodicallyLog v = forever $ do
       threadDelay 60000000
       v' <- atomically $ swapTVar v 0
       infoM rootLoggerName $ mconcat ["Processed ", show v', " messages from ", show uri]
