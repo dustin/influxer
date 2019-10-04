@@ -4,10 +4,12 @@
 
 module Main where
 
-import           Control.Concurrent.Async   (async, mapConcurrently_, waitCatch,
-                                             waitCatchSTM)
-import           Control.Concurrent.STM     (STM, TVar, atomically, orElse,
-                                             readTVar, registerDelay, retry)
+import           Control.Concurrent         (threadDelay)
+import           Control.Concurrent.Async   (async, cancel, mapConcurrently_,
+                                             waitCatch, waitCatchSTM)
+import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
+                                             newTVarIO, orElse, readTVar,
+                                             registerDelay, retry, swapTVar)
 import           Control.Exception          (SomeException, catch)
 import           Control.Lens
 import           Control.Monad              (when)
@@ -99,12 +101,20 @@ supervise name f = do
       when (not v') retry
       pure Nothing
 
-handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
-handle wp spool ws _ t v _ =  do
+type MQTTCB = MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
+data HandleContext = HandleContext {
+  counter :: TVar Int
+  , wp    :: WriteParams
+  , spool :: Spool
+  , ws    :: [Watch]
+  }
+
+handle :: HandleContext -> MQTTCB
+handle HandleContext{..} _ t v _ =  do
   x <- supervise (unpack t) handle'
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
-    Right a -> pure a
+    Right a -> plusplus counter
 
   where
     handle' = do
@@ -119,6 +129,9 @@ handle wp spool ws _ t v _ =  do
               logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", (intercalate " " . lines) excuse]
               insertSpool spool ts excuse l
             Nothing     -> pure ()
+
+    plusplus :: TVar Int -> IO ()
+    plusplus tv = atomically $ modifyTVar tv succ
 
     deadlined :: Int -> IO (Maybe String) -> IO (Maybe String)
     deadlined n a = do
@@ -171,18 +184,26 @@ handle wp spool ws _ t v _ =  do
 
 runWatcher :: WriteParams -> Spool -> Bool -> Bool -> Source -> IO ()
 runWatcher wp spool p5 clean (Source uri watchers) = do
-  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle wp spool watchers,
+  counter <- newTVarIO 0
+  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle (HandleContext counter wp spool watchers),
                               _protocol=prot p5, _cleanSession=clean,
                               _connProps=[PropSessionExpiryInterval 3600]} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
+  l <- async $ periodicallyLog counter
   logErr . show =<< waitForClient mc
+  cancel l
 
   where
     s = either show show
     prot True  = Protocol50
     prot False = Protocol311
+
+    periodicallyLog v = do
+      threadDelay 60000000
+      v' <- atomically $ swapTVar v 0
+      infoM rootLoggerName $ mconcat ["Processed ", show v', " messages from ", show uri]
 
 run :: Options -> IO ()
 run Options{..} = do
