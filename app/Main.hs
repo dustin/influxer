@@ -123,7 +123,7 @@ handle HandleContext{..} _ t v _ =  do
   x <- supervise (unpack t) handle'
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
-    Right a -> plusplus counter
+    Right _ -> plusplus counter
 
   where
     handle' = do
