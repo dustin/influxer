@@ -4,9 +4,13 @@
 
 module Main where
 
-import           Control.Concurrent.Async   (async, mapConcurrently_, waitCatch)
+import           Control.Concurrent.Async   (async, mapConcurrently_, waitCatch,
+                                             waitCatchSTM)
+import           Control.Concurrent.STM     (STM, TVar, atomically, orElse,
+                                             readTVar, registerDelay, retry)
 import           Control.Exception          (SomeException, catch)
 import           Control.Lens
+import           Control.Monad              (when)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -74,14 +78,32 @@ parseValue IgnoreVal _  = Left "ignored"
 logErr :: String -> IO ()
 logErr = errorM rootLoggerName
 
-supervise :: IO a -> IO (Either SomeException a)
-supervise f = async f >>= waitCatch
+supervise :: String -> IO a -> IO (Either SomeException a)
+supervise name f = do
+  p <- async f
+  v <- registerDelay 20000000
+  mt <- atomically $ (Just <$> waitCatchSTM p) `orElse` checkTimeout v
+
+  case mt of
+    Nothing -> do
+      logErr $ mconcat ["timed out waiting for supervised job '", name, "'... will continue waiting"]
+      rv <- waitCatch p
+      logErr $ mconcat ["supervised task '", name, "' finally finished"]
+      pure rv
+    Just x -> pure x
+
+  where
+    checkTimeout :: TVar Bool -> STM (Maybe a)
+    checkTimeout v = do
+      v' <- readTVar v
+      when (not v') retry
+      pure Nothing
 
 handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
 handle wp spool ws _ t v _ =  do
-  x <- supervise handle'
+  x <- supervise (unpack t) handle'
   case x of
-    Left e  -> logErr $ mconcat ["error on supervised handler: ", show e]
+    Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
     Right a -> pure a
 
   where

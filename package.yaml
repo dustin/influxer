@@ -36,6 +36,7 @@ dependencies:
 - hslogger
 - optparse-applicative
 - sqlite-simple
+- stm
 
 library:
   source-dirs: src
