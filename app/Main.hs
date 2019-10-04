@@ -40,9 +40,9 @@ import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, progDesc,
                                              short, showDefault, strOption,
                                              switch, value, (<**>))
-import           System.Log.Logger          (Priority (INFO), errorM, infoM,
-                                             rootLoggerName, setLevel,
-                                             updateGlobalLogger)
+import           System.Log.Logger          (Priority (DEBUG, INFO), debugM,
+                                             errorM, infoM, rootLoggerName,
+                                             setLevel, updateGlobalLogger)
 import           System.Timeout             (timeout)
 import           Text.Read                  (readEither)
 
@@ -56,6 +56,7 @@ data Options = Options {
   , optSpoolFile  :: String
   , optV5         :: Bool
   , optClean      :: Bool
+  , optVerbose    :: Bool
   }
 
 options :: Parser Options
@@ -66,6 +67,7 @@ options = Options
   <*> strOption (long "spool" <> showDefault <> value "influx.spool" <> help "spool file to store failed influxing")
   <*> switch (long "mqtt5" <> short '5' <> help "Use MQTT5 by default")
   <*> switch (long "clean" <> short 'c' <> help "Use a clean sesssion by default")
+  <*> switch (long "verbose" <> short 'v' <> help "Log more stuff")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
@@ -79,6 +81,12 @@ parseValue IgnoreVal _  = Left "ignored"
 
 logErr :: String -> IO ()
 logErr = errorM rootLoggerName
+
+logInfo :: String -> IO ()
+logInfo = infoM rootLoggerName
+
+logDebug :: String -> IO ()
+logDebug = debugM rootLoggerName
 
 supervise :: String -> IO a -> IO (Either SomeException a)
 supervise name f = do
@@ -111,6 +119,7 @@ data HandleContext = HandleContext {
 
 handle :: HandleContext -> MQTTCB
 handle HandleContext{..} _ t v _ =  do
+  logDebug $ mconcat ["Processing topic ", show t]
   x <- supervise (unpack t) handle'
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
@@ -190,7 +199,7 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
                               _connProps=[PropSessionExpiryInterval 3600]} uri
   let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
-  infoM rootLoggerName $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
+  logInfo $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   l <- async $ periodicallyLog counter
   logErr . show =<< waitForClient mc
   cancel l
@@ -203,10 +212,12 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
     periodicallyLog v = forever $ do
       threadDelay 60000000
       v' <- atomically $ swapTVar v 0
-      infoM rootLoggerName $ mconcat ["Processed ", show v', " messages from ", show uri]
+      logInfo $ mconcat ["Processed ", show v', " messages from ", show uri]
 
 run :: Options -> IO ()
 run Options{..} = do
+  updateGlobalLogger rootLoggerName (setLevel $ if optVerbose then DEBUG else INFO)
+
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   spool <- newSpool wp optSpoolFile
@@ -214,8 +225,6 @@ run Options{..} = do
 
 main :: IO ()
 main = do
-  updateGlobalLogger rootLoggerName (setLevel INFO)
-
   run =<< execParser opts
 
   where opts = info (options <**> helper)
