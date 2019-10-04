@@ -4,8 +4,8 @@
 
 module Main where
 
-import           Control.Concurrent.Async   (mapConcurrently_)
-import           Control.Exception          (catch)
+import           Control.Concurrent.Async   (async, mapConcurrently_, waitCatch)
+import           Control.Exception          (SomeException, catch)
 import           Control.Lens
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -74,21 +74,30 @@ parseValue IgnoreVal _  = Left "ignored"
 logErr :: String -> IO ()
 logErr = errorM rootLoggerName
 
+supervise :: IO a -> IO (Either SomeException a)
+supervise f = async f >>= waitCatch
+
 handle :: WriteParams -> Spool -> [Watch] -> MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
-handle wp spool ws _ t v _ = do
-  ts <- getCurrentTime
-  case extract ts $ foldr (\(Watch _ p e) o -> if p `match` t then e else o) undefined ws of
-    Left "ignored" -> pure ()
-    Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
-    Right l -> do
-      exc <- deadlined 15000000 (tryWrite l)
-      case exc of
-        Just excuse -> do
-          logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", (intercalate " " . lines) excuse]
-          insertSpool spool ts excuse l
-        Nothing     -> pure ()
+handle wp spool ws _ t v _ =  do
+  x <- supervise handle'
+  case x of
+    Left e  -> logErr $ mconcat ["error on supervised handler: ", show e]
+    Right a -> pure a
 
   where
+    handle' = do
+      ts <- getCurrentTime
+      case extract ts $ foldr (\(Watch _ p e) o -> if p `match` t then e else o) undefined ws of
+        Left "ignored" -> pure ()
+        Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
+        Right l -> do
+          exc <- deadlined 15000000 (tryWrite l)
+          case exc of
+            Just excuse -> do
+              logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", (intercalate " " . lines) excuse]
+              insertSpool spool ts excuse l
+            Nothing     -> pure ()
+
     deadlined :: Int -> IO (Maybe String) -> IO (Maybe String)
     deadlined n a = do
       tod <- timeout n a
