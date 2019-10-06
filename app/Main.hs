@@ -97,10 +97,16 @@ logInfo = infoM rootLoggerName
 logDebug :: String -> IO ()
 logDebug = debugM rootLoggerName
 
+seconds :: Int -> Int
+seconds = (* 1000000)
+
+delaySeconds :: Int -> IO ()
+delaySeconds = threadDelay . seconds
+
 supervise :: String -> IO a -> IO (Either SomeException a)
 supervise name f = do
   p <- async f
-  v <- registerDelay 20000000
+  v <- registerDelay (seconds 20)
   mt <- atomically $ (Just <$> waitCatchSTM p) `orElse` checkTimeout v
 
   case mt of
@@ -141,7 +147,7 @@ handle HandleContext{..} _ t v _ =  do
         Left "ignored" -> pure ()
         Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
         Right l -> do
-          exc <- deadlined 15000000 (tryWrite l)
+          exc <- deadlined (seconds 15) (tryWrite l)
           case exc of
             Just excuse -> do
               logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", (intercalate " " . lines) excuse]
@@ -205,7 +211,6 @@ prot :: Bool -> ProtocolLevel
 prot True  = Protocol50
 prot False = Protocol311
 
-
 runWatcher :: WriteParams -> Spool -> Bool -> Bool -> Source -> IO ()
 runWatcher wp spool p5 clean (Source uri watchers) = do
   counter <- newTVarIO 0
@@ -223,7 +228,7 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
     s = either show show
 
     periodicallyLog v = forever $ do
-      threadDelay 60000000
+      delaySeconds 60
       v' <- atomically $ swapTVar v 0
       logInfo $ mconcat ["Processed ", show v', " messages from ", show uri]
 
@@ -232,13 +237,13 @@ runReporter Options{..} spool = forever $ do
   catch (bracket connto normalDisconnect loop) (\e -> logErr $ mconcat ["connecting to ",
                                                                         show optMQTTURL, " - ",
                                                                         show (e :: SomeException)])
-  threadDelay 5000000
+  delaySeconds 5
 
   where
     connto = connectURI mqttConfig{_protocol=prot optV5, _cleanSession=True, _connProps=[]} optMQTTURL
 
     loop mc = forever $ do
-      threadDelay 60000000
+      delaySeconds 60
       c <- count spool
       publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
