@@ -5,6 +5,7 @@ module InfluxerConf (
   Source(..),
   Watch(..),
   Extractor(..),
+  QOS(..),
   JSONPExtractor(..),
   ValueParser(..),
   MeasurementNamer(..),
@@ -29,7 +30,9 @@ newtype InfluxerConf = InfluxerConf [Source] deriving(Show)
 
 data Source = Source URI [Watch] deriving(Show)
 
-data Watch = Watch Bool Text Extractor deriving(Show)
+data QOS = QOS0 | QOS1 | QOS2 deriving(Show)
+
+data Watch = Watch QOS Bool Text Extractor deriving(Show)
 
 type Tags = [(Text,MeasurementNamer)]
 
@@ -89,9 +92,10 @@ parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` (symbol "
 parseWatch :: Parser Watch
 parseWatch = do
   cons <- (True <$ symbol "watch") <|> (False <$ symbol "match")
+  q <- option QOS2 parseQoS
   t <- lexeme qstr
   x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
-  pure $ Watch cons t x
+  pure $ Watch q cons t x
 
   where
 
@@ -100,6 +104,8 @@ parseWatch = do
 
     parseMsr :: Parser MeasurementNamer
     parseMsr = option (FieldNum 0) ("measurement=" *> parsemn)
+
+    parseQoS = (QOS0 <$ lexeme "qos0") <|> (QOS1 <$ lexeme "qos1") <|> (QOS2 <$ lexeme "qos2")
 
     jsonpWatch :: Parser JSONPExtractor
     jsonpWatch = between (symbol "{") (symbol "}") parsePee

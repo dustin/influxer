@@ -143,7 +143,7 @@ handle HandleContext{..} _ t v _ =  do
   where
     handle' = do
       ts <- getCurrentTime
-      case extract ts $ foldr (\(Watch _ p e) o -> if p `match` t then e else o) undefined ws of
+      case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) undefined ws of
         Left "ignored" -> pure ()
         Left x -> logErr $ mconcat ["error on ", unpack t, " -> ", show v, ": " , x]
         Right l -> do
@@ -217,7 +217,7 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
   mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle (HandleContext counter wp spool watchers),
                               _protocol=prot p5, _cleanSession=clean,
                               _connProps=[PropSessionExpiryInterval 3600]} uri
-  let tosub = [(t,subOptions{_subQoS=QoS2}) | (Watch w t _) <- watchers, w]
+  let tosub = [(t,subOptions{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   l <- async $ periodicallyLog counter
@@ -226,6 +226,10 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
 
   where
     s = either show show
+
+    q QOS0 = QoS0
+    q QOS1 = QoS1
+    q QOS2 = QoS2
 
     periodicallyLog v = forever $ do
       delaySeconds 60
