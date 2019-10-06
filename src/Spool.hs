@@ -1,13 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Spool (Spool, newSpool, insertSpool, closeSpool) where
+module Spool (Spool, newSpool, insertSpool, closeSpool, count) where
 
 import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async, async, cancel, link)
 import           Control.Exception        (catch)
 import           Control.Lens
-import           Control.Monad            (forever, when, unless)
+import           Control.Monad            (forever, unless, when)
 import qualified Data.ByteString.Lazy     as BL
 import           Data.Time                (UTCTime, getCurrentTime)
 import           Database.InfluxDB        (InfluxException (..), Line (..),
@@ -42,6 +42,9 @@ reschedStmt = "update spool set last_attempt = ?, last_error = ? where id = ?"
 
 removeStmt :: Query
 removeStmt = "delete from spool where id = ?"
+
+countStmt :: Query
+countStmt = "select count(*) from spool"
 
 newSpool :: WriteParams -> String -> IO Spool
 newSpool wp fn = do
@@ -79,6 +82,9 @@ runInserter wp conn = forever insertSome
 insertSpool :: Spool -> UTCTime -> String -> Line UTCTime -> IO ()
 insertSpool Spool{..} ts err l =
   execute conn insertStatement (ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
+
+count :: Spool -> IO Int
+count Spool{..} = query_ conn countStmt >>= \[[c]] -> pure c
 
 closeSpool :: Spool -> IO ()
 closeSpool Spool{..} = do

@@ -5,12 +5,13 @@
 module Main where
 
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.Async   (async, cancel, mapConcurrently_,
-                                             waitCatch, waitCatchSTM)
+import           Control.Concurrent.Async   (async, cancel, link,
+                                             mapConcurrently_, waitCatch,
+                                             waitCatchSTM)
 import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
                                              newTVarIO, orElse, readTVar,
                                              registerDelay, retry, swapTVar)
-import           Control.Exception          (SomeException, catch)
+import           Control.Exception          (SomeException, bracket, catch)
 import           Control.Lens
 import           Control.Monad              (forever, when)
 import           Data.Aeson                 (Value (..), eitherDecode)
@@ -18,7 +19,7 @@ import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.List                  (intercalate)
 import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 (mapMaybe)
+import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, splitOn, unpack)
@@ -33,13 +34,17 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              MessageCallback (..),
                                              Property (..), ProtocolLevel (..),
                                              QoS (..), SubOptions (..), Topic,
-                                             connectURI, mqttConfig, subOptions,
-                                             subscribe, waitForClient)
+                                             connectURI, mqttConfig,
+                                             normalDisconnect, publishq,
+                                             subOptions, subscribe,
+                                             waitForClient)
 import           Network.MQTT.Topic         (match)
+import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
-                                             helper, info, long, progDesc,
-                                             short, showDefault, strOption,
-                                             switch, value, (<**>))
+                                             helper, info, long, maybeReader,
+                                             option, progDesc, short,
+                                             showDefault, strOption, switch,
+                                             value, (<**>))
 import           System.Log.Logger          (Priority (DEBUG, INFO), debugM,
                                              errorM, infoM, rootLoggerName,
                                              setLevel, updateGlobalLogger)
@@ -57,6 +62,8 @@ data Options = Options {
   , optV5         :: Bool
   , optClean      :: Bool
   , optVerbose    :: Bool
+  , optMQTTURL    :: URI
+  , optMQTTPrefix :: Topic
   }
 
 options :: Parser Options
@@ -68,6 +75,8 @@ options = Options
   <*> switch (long "mqtt5" <> short '5' <> help "Use MQTT5 by default")
   <*> switch (long "clean" <> short 'c' <> help "Use a clean sesssion by default")
   <*> switch (long "verbose" <> short 'v' <> help "Log more stuff")
+  <*> option (maybeReader parseURI) (long "mqtt-uri" <> showDefault <> value (fromJust $ parseURI "mqtt://localhost/") <> help "mqtt broker URI")
+  <*> strOption (long "mqtt-prefix" <> showDefault <> value "tmp/influxer/" <> help "MQTT topic prefix")
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
@@ -191,6 +200,12 @@ handle HandleContext{..} _ t v _ =  do
         jt StringVal (String x) = Just $ FieldString x
         jt _ _                  = Nothing
 
+
+prot :: Bool -> ProtocolLevel
+prot True  = Protocol50
+prot False = Protocol311
+
+
 runWatcher :: WriteParams -> Spool -> Bool -> Bool -> Source -> IO ()
 runWatcher wp spool p5 clean (Source uri watchers) = do
   counter <- newTVarIO 0
@@ -206,21 +221,35 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
 
   where
     s = either show show
-    prot True  = Protocol50
-    prot False = Protocol311
 
     periodicallyLog v = forever $ do
       threadDelay 60000000
       v' <- atomically $ swapTVar v 0
       logInfo $ mconcat ["Processed ", show v', " messages from ", show uri]
 
+runReporter :: Options -> Spool -> IO ()
+runReporter Options{..} spool = forever $ do
+  catch (bracket connto normalDisconnect loop) (\e -> logErr $ mconcat ["connecting to ",
+                                                                        show optMQTTURL, " - ",
+                                                                        show (e :: SomeException)])
+  threadDelay 5000000
+
+  where
+    connto = connectURI mqttConfig{_protocol=prot optV5, _cleanSession=True, _connProps=[]} optMQTTURL
+
+    loop mc = forever $ do
+      threadDelay 60000000
+      c <- count spool
+      publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
+
 run :: Options -> IO ()
-run Options{..} = do
+run opts@Options{..} = do
   updateGlobalLogger rootLoggerName (setLevel $ if optVerbose then DEBUG else INFO)
 
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   spool <- newSpool wp optSpoolFile
+  async (runReporter opts spool) >>= link
   mapConcurrently_ (runWatcher wp spool optV5 optClean) srcs
 
 main :: IO ()
