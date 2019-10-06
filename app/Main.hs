@@ -39,6 +39,7 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              subOptions, subscribe,
                                              waitForClient)
 import           Network.MQTT.Topic         (match)
+import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, maybeReader,
@@ -124,7 +125,7 @@ supervise name f = do
       when (not v') retry
       pure Nothing
 
-type MQTTCB = MQTTClient -> Topic -> BL.ByteString -> [Property] -> IO ()
+type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 data HandleContext = HandleContext {
   counter :: TVar Int
   , wp    :: WriteParams
@@ -133,14 +134,18 @@ data HandleContext = HandleContext {
   }
 
 handle :: HandleContext -> MQTTCB
-handle HandleContext{..} _ t v _ =  do
-  logDebug $ mconcat ["Processing topic ", show t]
+handle HandleContext{..} _ PublishRequest{..} =  do
+  logDebug $ mconcat ["Processing ", show t, " mid", show _pubPktID, " ", show _pubProps]
   x <- supervise (unpack t) handle'
+  logDebug $ mconcat ["Finished processing", show t, " mid", show _pubPktID, " with ", show x]
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
     Right _ -> plusplus counter
 
   where
+    t = (TE.decodeUtf8 . BL.toStrict) _pubTopic
+    v = _pubBody
+
     handle' = do
       ts <- getCurrentTime
       case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) undefined ws of
@@ -214,7 +219,7 @@ prot False = Protocol311
 runWatcher :: WriteParams -> Spool -> Bool -> Bool -> Source -> IO ()
 runWatcher wp spool p5 clean (Source uri watchers) = do
   counter <- newTVarIO 0
-  mc <- connectURI mqttConfig{_msgCB=SimpleCallback $ handle (HandleContext counter wp spool watchers),
+  mc <- connectURI mqttConfig{_msgCB=LowLevelCallback $ handle (HandleContext counter wp spool watchers),
                               _protocol=prot p5, _cleanSession=clean,
                               _connProps=[PropSessionExpiryInterval 3600]} uri
   let tosub = [(t,subOptions{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]

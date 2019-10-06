@@ -41,7 +41,7 @@ extra-deps:
 - git: https://github.com/seagreen/hjsonpointer.git
   commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
 - git: https://github.com/dustin/mqtt-hs.git
-  commit: a89460676ca9951c335b1a3c20cd3c0a2f0aa151
+  commit: 353adf25d479882fe72385cdebe641638bc80000
 # - net-mqtt-0.6.0.0
 
 # Override default flag values for local packages and extra-deps
