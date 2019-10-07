@@ -137,7 +137,7 @@ handle :: HandleContext -> MQTTCB
 handle HandleContext{..} _ PublishRequest{..} =  do
   logDebug $ mconcat ["Processing ", show t, " mid", show _pubPktID, " ", show _pubProps]
   x <- supervise (unpack t) handle'
-  logDebug $ mconcat ["Finished processing", show t, " mid", show _pubPktID, " with ", show x]
+  logDebug $ mconcat ["Finished processing ", show t, " mid", show _pubPktID, " with ", show x]
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", unpack t, ": ", show e]
     Right _ -> plusplus counter
