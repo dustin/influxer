@@ -36,10 +36,11 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
                                              QoS (..), SubOptions (..), Topic,
                                              connectURI, mqttConfig,
                                              normalDisconnect, publishq,
-                                             subOptions, subscribe,
+                                             subOptions, subscribe, svrProps,
                                              waitForClient)
 import           Network.MQTT.Topic         (match)
-import           Network.MQTT.Types         (PublishRequest (..))
+import           Network.MQTT.Types         (PublishRequest (..),
+                                             RetainHandling (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, fullDesc, help,
                                              helper, info, long, maybeReader,
@@ -221,8 +222,14 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
   counter <- newTVarIO 0
   mc <- connectURI mqttConfig{_msgCB=LowLevelCallback $ handle (HandleContext counter wp spool watchers),
                               _protocol=prot p5, _cleanSession=clean,
-                              _connProps=[PropSessionExpiryInterval 3600]} uri
-  let tosub = [(t,subOptions{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
+                              _connProps=[PropSessionExpiryInterval 3600,
+                                          PropTopicAliasMaximum 1024,
+                                          PropRequestProblemInformation 1,
+                                          PropRequestResponseInformation 1]} uri
+  cprops <- svrProps mc
+  logInfo $ mconcat ["Connected to ", show uri, ": ", show cprops]
+  let baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
+      tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   l <- async $ periodicallyLog counter
