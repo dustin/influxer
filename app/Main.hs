@@ -54,6 +54,7 @@ import           System.Timeout             (timeout)
 import           Text.Read                  (readEither)
 
 import           InfluxerConf
+import           LogStuff
 import           Spool
 
 data Options = Options {
@@ -156,7 +157,7 @@ handle HandleContext{..} _ PublishRequest{..} =  do
           exc <- deadlined (seconds 15) (tryWrite l)
           case exc of
             Just excuse -> do
-              logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", (intercalate " " . lines) excuse]
+              logErr $ mconcat ["influx error on ", unpack t, " -> ", show v, ": ", deLine excuse]
               insertSpool spool ts excuse l
             Nothing     -> pure ()
 

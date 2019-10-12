@@ -18,6 +18,8 @@ import           Database.SQLite.Simple   hiding (bind, close)
 import qualified Database.SQLite.Simple   as SQLite
 import           System.Log.Logger        (errorM, infoM)
 
+import           LogStuff
+
 data Spool = Spool {
   wp         :: WriteParams
   , conn     :: Connection
@@ -77,7 +79,7 @@ runInserter wp conn = forever insertSome
     reschedule ids e = do
       errorM "retry" ("retry batch insertion error: " <> show e)
       ts <- getCurrentTime
-      withTransaction conn $ executeMany conn reschedStmt [(ts,show e,r) | r <- ids]
+      withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
       threadDelay 15000000 -- slow down processing when we're rescheduling.
 
 insertSpool :: Spool -> UTCTime -> String -> Line UTCTime -> IO ()
