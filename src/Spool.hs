@@ -77,7 +77,7 @@ runInserter wp conn = forever insertSome
 
     reschedule :: [Int] -> InfluxException -> IO ()
     reschedule ids e = do
-      errorM "retry" ("retry batch insertion error: " <> show e)
+      errorM "retry" ("retry batch insertion error: " <> (deLine . show) e)
       ts <- getCurrentTime
       withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
       threadDelay 15000000 -- slow down processing when we're rescheduling.
