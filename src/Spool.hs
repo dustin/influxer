@@ -78,6 +78,7 @@ runInserter wp conn = forever insertSome
       errorM "retry" ("retry batch insertion error: " <> show e)
       ts <- getCurrentTime
       withTransaction conn $ executeMany conn reschedStmt [(ts,show e,r) | r <- ids]
+      threadDelay 15000000 -- slow down processing when we're rescheduling.
 
 insertSpool :: Spool -> UTCTime -> String -> Line UTCTime -> IO ()
 insertSpool Spool{..} ts err l =
