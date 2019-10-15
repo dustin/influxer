@@ -120,11 +120,7 @@ parseWatch = do
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
 
 parseFile :: Parser a -> String -> IO a
-parseFile f s = do
-  c <- pack <$> readFile s
-  case parse f s c of
-    (Left x)  -> fail (errorBundlePretty x)
-    (Right v) -> pure v
+parseFile f s = pack <$> readFile s >>= either (fail.errorBundlePretty) pure . parse f s
 
 parseConfFile :: String -> IO InfluxerConf
 parseConfFile = parseFile parseInfluxerConf
