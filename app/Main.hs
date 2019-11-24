@@ -5,9 +5,8 @@
 module Main where
 
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.Async   (async, cancel, link,
-                                             mapConcurrently_, waitCatch,
-                                             waitCatchSTM)
+import           Control.Concurrent.Async   (async, link, mapConcurrently_,
+                                             waitCatch, waitCatchSTM, withAsync)
 import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
                                              newTVarIO, orElse, readTVar,
                                              registerDelay, retry, swapTVar)
@@ -233,9 +232,7 @@ runWatcher wp spool p5 clean (Source uri watchers) = do
       tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
   (subrv,_) <- subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
-  l <- async $ periodicallyLog counter
-  logErr . show =<< waitForClient mc
-  cancel l
+  withAsync (periodicallyLog counter) $ \_ -> waitForClient mc
 
   where
     s = either show show
