@@ -275,8 +275,7 @@ run opts@Options{..} = do
   mapConcurrently_ (runWatcher wp spool optV5 optClean) srcs
 
 main :: IO ()
-main = do
-  run =<< execParser opts
+main = run =<< execParser opts
 
   where opts = info (options <**> helper)
           ( fullDesc <> progDesc "Influx the mqtt")
