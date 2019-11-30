@@ -5,14 +5,14 @@
 module Main where
 
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.Async   (async, link, mapConcurrently_,
-                                             waitCatch, waitCatchSTM, withAsync)
 import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
                                              newTVarIO, orElse, readTVar,
                                              registerDelay, retry, swapTVar)
 import           Control.Exception          (SomeException, bracket, catch)
 import           Control.Lens
 import           Control.Monad              (forever, when)
+import           Control.Monad.Logger       (LogLevel (..), LoggingT,
+                                             filterLogger, runStderrLoggingT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -51,6 +51,8 @@ import           System.Log.Logger          (Priority (DEBUG, INFO), debugM,
                                              setLevel, updateGlobalLogger)
 import           System.Timeout             (timeout)
 import           Text.Read                  (readEither)
+import           UnliftIO.Async             (async, link, mapConcurrently_,
+                                             waitCatch, waitCatchSTM, withAsync)
 
 import           InfluxerConf
 import           LogStuff
@@ -267,9 +269,14 @@ run opts@Options{..} = do
 
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
-  spool <- newSpool wp optSpoolFile
+  spool <- runStderrLoggingT . logfilt $ s wp optSpoolFile
   async (runReporter opts spool) >>= link
   mapConcurrently_ (runWatcher wp spool optV5 optClean) srcs
+
+  where
+    logfilt = filterLogger (\_ -> flip (if optVerbose then (>=) else (>)) LevelDebug)
+    s :: WriteParams -> String -> LoggingT IO Spool
+    s = newSpool
 
 main :: IO ()
 main = run =<< execParser opts

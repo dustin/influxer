@@ -37,6 +37,12 @@ dependencies:
 - optparse-applicative
 - sqlite-simple
 - stm
+- mtl
+- transformers
+- unliftio
+- unliftio-core
+- monad-logger
+- exceptions
 
 library:
   source-dirs: src
