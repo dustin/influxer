@@ -33,7 +33,6 @@ dependencies:
 - scientific
 - time
 - lens
-- hslogger
 - optparse-applicative
 - sqlite-simple
 - stm
