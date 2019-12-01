@@ -18,8 +18,7 @@ import           Control.Monad.IO.Unlift    (withRunInIO)
 import           Control.Monad.Logger       (LogLevel (..), LoggingT,
                                              MonadLogger, filterLogger,
                                              logWithoutLoc, runStderrLoggingT)
-import           Control.Monad.Reader       (ReaderT (..), ask, asks,
-                                             runReaderT)
+import           Control.Monad.Reader       (ReaderT (..), asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -150,14 +149,14 @@ supervise name f = do
 
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
-handle :: HandleContext -> [Watch] -> (Influxer () -> IO ()) -> MQTTCB
-handle HandleContext{..} ws unl _ PublishRequest{..} = unl $ do
+handle :: [Watch] -> (Influxer () -> IO ()) -> MQTTCB
+handle ws unl _ PublishRequest{..} = unl $ do
   logDbg $ mconcat ["Processing ", lstr t, " mid", lstr _pubPktID, " ", lstr _pubProps]
   x <- supervise (unpack t) handle'
   logDbg $ mconcat ["Finished processing ", lstr t, " mid", lstr _pubPktID, " with ", lstr x]
   case x of
     Left e  -> logErr $ mconcat ["error on supervised handler for ", t, ": ", lstr e]
-    Right _ -> plusplus counter
+    Right _ -> plusplus
 
   where
     t = (TE.decodeUtf8 . BL.toStrict) _pubTopic
@@ -170,21 +169,21 @@ handle HandleContext{..} ws unl _ PublishRequest{..} = unl $ do
         Left "ignored" -> pure ()
         Left x -> logErr $ mconcat ["error on ", t, " -> ", lstr v, ": " , pack x]
         Right l -> do
-          exc <- deadlined (seconds 15) (liftIO $ tryWrite l)
+          exc <- deadlined (seconds 15) (asks wp >>= \w -> liftIO $ tryWrite l w)
           case exc of
             Just excuse -> do
               logErr $ mconcat ["influx error on ", t, " -> ", lstr v, ": ", pack $ deLine excuse]
-              insertSpool spool ts excuse l
+              asks spool >>= \s -> insertSpool s ts excuse l
             Nothing     -> pure ()
 
-    plusplus :: TVar Int -> Influxer ()
-    plusplus tv = liftIO . atomically $ modifyTVar tv succ
+    plusplus :: Influxer ()
+    plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
 
     deadlined :: Int -> Influxer (Maybe String) -> Influxer (Maybe String)
     deadlined n a = fromMaybe (Just "timed out") <$> timeout n a
 
-    tryWrite :: Line UTCTime -> IO (Maybe String)
-    tryWrite l = catch (Nothing <$ write wp l) (\e -> pure $ Just (show (e :: InfluxException)))
+    tryWrite :: Line UTCTime -> WriteParams -> IO (Maybe String)
+    tryWrite l w = catch (Nothing <$ write w l) (\e -> pure $ Just (show (e :: InfluxException)))
 
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
     extract ts (ValEx vp tags fld mn) = case parseValue vp v of
@@ -233,8 +232,7 @@ prot False = Protocol311
 runWatcher :: Source -> Influxer ()
 runWatcher (Source uri watchers) = do
   Options{..} <- asks opts
-  hc <- ask
-  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle hc watchers unl,
+  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle watchers unl,
                                                     _protocol=prot optV5, _cleanSession=optClean,
                                                     _connProps=[PropSessionExpiryInterval 3600,
                                                                 PropTopicAliasMaximum 1024,
