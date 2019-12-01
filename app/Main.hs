@@ -15,9 +15,10 @@ import           Control.Monad              (forever, when)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
-import           Control.Monad.Logger       (LogLevel (..), LoggingT,
-                                             MonadLogger, filterLogger,
-                                             logWithoutLoc, runStderrLoggingT)
+import           Control.Monad.Logger       (LogLevel (..), LogStr, LoggingT,
+                                             MonadLogger, ToLogStr,
+                                             filterLogger, logWithoutLoc,
+                                             runStderrLoggingT, toLogStr)
 import           Control.Monad.Reader       (ReaderT (..), asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -27,7 +28,7 @@ import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (fromJust, fromMaybe, mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
-import           Data.Text                  (Text, pack, splitOn, unpack)
+import           Data.Text                  (Text, splitOn, unpack)
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..),
@@ -104,20 +105,20 @@ parseValue BoolVal v
   | otherwise = Right $ FieldBool False
 parseValue IgnoreVal _  = Left "ignored"
 
-logAt :: MonadLogger m => LogLevel -> Text -> m ()
+logAt :: (MonadLogger m, ToLogStr msg) => LogLevel -> msg -> m ()
 logAt l = logWithoutLoc "" l
 
-logErr :: MonadLogger m => Text -> m ()
+logErr :: (MonadLogger m, ToLogStr msg) => msg -> m ()
 logErr = logAt LevelError
 
-logInfo :: MonadLogger m => Text -> m ()
+logInfo :: (MonadLogger m, ToLogStr msg) => msg -> m ()
 logInfo = logAt LevelInfo
 
-logDbg :: MonadLogger m => Text -> m ()
+logDbg :: (MonadLogger m, ToLogStr msg) => msg -> m ()
 logDbg = logAt LevelDebug
 
-lstr :: Show a => a -> Text
-lstr = pack . show
+lstr :: Show a => a -> LogStr
+lstr = toLogStr . show
 
 seconds :: Int -> Int
 seconds = (* 1000000)
@@ -134,9 +135,9 @@ supervise name f = do
 
   case mt of
     Nothing -> do
-      logErr $ mconcat ["timed out waiting for supervised job '", pack name, "'... will continue waiting"]
+      logErr $ "timed out waiting for supervised job " <> lstr name <> "... will continue waiting"
       rv <- waitCatch p
-      logErr $ mconcat ["supervised task '", pack name, "' finally finished"]
+      logErr $ "supervised task " <> lstr name <> " finally finished"
       pure rv
     Just x -> pure x
 
@@ -151,11 +152,11 @@ type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
 handle :: [Watch] -> (Influxer () -> IO ()) -> MQTTCB
 handle ws unl _ PublishRequest{..} = unl $ do
-  logDbg $ mconcat ["Processing ", lstr t, " mid", lstr _pubPktID, " ", lstr _pubProps]
+  logDbg $ "Processing " <> lstr t <> " mid" <> lstr _pubPktID <> " " <> lstr _pubProps
   x <- supervise (unpack t) handle'
-  logDbg $ mconcat ["Finished processing ", lstr t, " mid", lstr _pubPktID, " with ", lstr x]
+  logDbg $ "Finished processing " <> lstr t <> " mid" <> lstr _pubPktID <> " with " <> lstr x
   case x of
-    Left e  -> logErr $ mconcat ["error on supervised handler for ", t, ": ", lstr e]
+    Left e  -> logErr $ "error on supervised handler for " <> toLogStr t <> ": " <> lstr e
     Right _ -> plusplus
 
   where
@@ -167,12 +168,12 @@ handle ws unl _ PublishRequest{..} = unl $ do
       ts <- liftIO $ getCurrentTime
       case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) undefined ws of
         Left "ignored" -> pure ()
-        Left x -> logErr $ mconcat ["error on ", t, " -> ", lstr v, ": " , pack x]
+        Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
           exc <- deadlined (seconds 15) (asks wp >>= \w -> liftIO $ tryWrite l w)
           case exc of
             Just excuse -> do
-              logErr $ mconcat ["influx error on ", t, " -> ", lstr v, ": ", pack $ deLine excuse]
+              logErr $ "influx error on " <> toLogStr t <> " -> " <> lstr v <> ": " <> toLogStr (deLine excuse)
               asks spool >>= \s -> insertSpool s ts excuse l
             Nothing     -> pure ()
 
@@ -239,11 +240,11 @@ runWatcher (Source uri watchers) = do
                                                                 PropRequestProblemInformation 1,
                                                                 PropRequestResponseInformation 1]} uri
   cprops <- liftIO $ svrProps mc
-  logInfo $ mconcat ["Connected to ", lstr uri, ": ", lstr cprops]
+  logInfo $ "Connected to " <> lstr uri <> ": " <> lstr cprops
   let baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
       tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
-  logInfo $ "Subscribed: " <> pack (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
+  logInfo $ "Subscribed: " <> toLogStr (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   cnt <- asks counter
   withAsync (periodicallyLog cnt) $ \_ -> liftIO $ waitForClient mc
 
@@ -257,7 +258,7 @@ runWatcher (Source uri watchers) = do
     periodicallyLog v = forever $ do
       delaySeconds 60
       v' <- liftIO . atomically $ swapTVar v 0
-      logInfo $ mconcat ["Processed ", lstr v', " messages from ", lstr uri]
+      logInfo $ "Processed " <> lstr v' <> " messages from " <> lstr uri
 
 runReporter :: Influxer ()
 runReporter = forever $ do
