@@ -40,7 +40,7 @@ packages:
 extra-deps:
 - git: https://github.com/seagreen/hjsonpointer.git
   commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
-- net-mqtt-0.6.2.2
+- net-mqtt-0.6.2.3
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -65,3 +65,6 @@ extra-deps:
 #
 # Allow a newer minor version of GHC than the snapshot specifies
 # compiler-check: newer-minor
+
+nix:
+  packages: [ zlib ]
