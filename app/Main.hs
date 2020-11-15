@@ -156,7 +156,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
-          exc <- deadlined (seconds 15) (asks wp >>= \w -> liftIO $ tryWrite l w)
+          exc <- deadlined (seconds 30) (asks wp >>= \w -> liftIO $ tryWrite l w)
           case exc of
             Just excuse -> do
               logErr $ "influx error on " <> toLogStr t <> " -> " <> lstr v <> ": " <> toLogStr (deLine excuse)
