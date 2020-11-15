@@ -7,18 +7,15 @@
 module Main where
 
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar,
-                                             newTVarIO, orElse, readTVar,
+import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar, newTVarIO, orElse, readTVar,
                                              registerDelay, retry, swapTVar)
 import           Control.Lens
 import           Control.Monad              (forever, when)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
-import           Control.Monad.Logger       (LogLevel (..), LogStr, LoggingT,
-                                             MonadLogger, ToLogStr,
-                                             filterLogger, logWithoutLoc,
-                                             runStderrLoggingT, toLogStr)
+import           Control.Monad.Logger       (LogLevel (..), LogStr, LoggingT, MonadLogger, ToLogStr, filterLogger,
+                                             logWithoutLoc, runStderrLoggingT, toLogStr)
 import           Control.Monad.Reader       (ReaderT (..), asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -31,31 +28,20 @@ import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, splitOn, unpack)
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
-import           Database.InfluxDB          (Field (..), InfluxException (..),
-                                             Key, Line (..), LineField,
-                                             WriteParams, host, server, write,
-                                             writeParams)
+import           Database.InfluxDB          (Field (..), InfluxException (..), Key, Line (..), LineField, WriteParams,
+                                             host, server, write, writeParams)
 import qualified JSONPointer                as JP
-import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..),
-                                             MessageCallback (..),
-                                             Property (..), ProtocolLevel (..),
-                                             QoS (..), SubOptions (..), Topic,
-                                             connectURI, mqttConfig,
-                                             normalDisconnect, publishq,
-                                             subOptions, subscribe, svrProps,
+import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
+                                             ProtocolLevel (..), QoS (..), SubOptions (..), Topic, connectURI,
+                                             mqttConfig, normalDisconnect, publishq, subOptions, subscribe, svrProps,
                                              waitForClient)
 import           Network.MQTT.Topic         (match)
-import           Network.MQTT.Types         (PublishRequest (..),
-                                             RetainHandling (..))
+import           Network.MQTT.Types         (PublishRequest (..), RetainHandling (..))
 import           Network.URI                (URI, parseURI)
-import           Options.Applicative        (Parser, execParser, fullDesc, help,
-                                             helper, info, long, maybeReader,
-                                             option, progDesc, short,
-                                             showDefault, strOption, switch,
-                                             value, (<**>))
+import           Options.Applicative        (Parser, execParser, fullDesc, help, helper, info, long, maybeReader,
+                                             option, progDesc, short, showDefault, strOption, switch, value, (<**>))
 import           Text.Read                  (readEither)
-import           UnliftIO.Async             (async, link, mapConcurrently_,
-                                             waitCatch, waitCatchSTM, withAsync)
+import           UnliftIO.Async             (async, link, mapConcurrently_, waitCatch, waitCatchSTM, withAsync)
 import           UnliftIO.Timeout           (timeout)
 
 import           InfluxerConf
