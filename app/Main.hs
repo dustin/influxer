@@ -11,7 +11,7 @@ import           Control.Concurrent.STM     (STM, TQueue, TVar, atomically, flus
                                              newTVarIO, orElse, peekTQueue, readTVar, registerDelay, retry, swapTVar,
                                              writeTQueue)
 import           Control.Lens
-import           Control.Monad              (forever, unless, when)
+import           Control.Monad              (forever, unless)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
@@ -280,8 +280,8 @@ runInserter = ask >>= forever . go
               mightInsert = do
                 m <- timeout (seconds 30) (liftIO $ writeByteString wp (ls todo))
                 case m of
-                  Just _  -> insertSpoolMany spool todo "timed out"
-                  Nothing -> pure ()
+                  Nothing -> insertSpoolMany spool todo "timed out"
+                  Just _  -> pure ()
 
               failed :: (MonadLogger m, MonadIO m) => InfluxException -> m ()
               failed ex = do
