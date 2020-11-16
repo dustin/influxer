@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -13,8 +14,7 @@ import           Control.Monad.Logger    (MonadLogger, logErrorN, logInfoN)
 import qualified Data.ByteString.Lazy    as BL
 import qualified Data.Text               as T
 import           Data.Time               (UTCTime, getCurrentTime)
-import           Database.InfluxDB       (InfluxException (..), Line (..),
-                                          WriteParams, precision, scaleTo,
+import           Database.InfluxDB       (InfluxException (..), Line (..), WriteParams, precision, scaleTo,
                                           writeByteString)
 import           Database.InfluxDB.Line  (encodeLine)
 import           Database.SQLite.Simple  hiding (bind, close)
@@ -95,9 +95,7 @@ insertSpool Spool{..} ts err l =
   liftIO $ execute conn insertStatement (ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
 
 count :: MonadIO m => Spool -> m Int
-count Spool{..} = liftIO (query_ conn countStmt) >>= \[[c]] -> pure c
+count Spool{conn} = head . head <$> liftIO (query_ conn countStmt)
 
 closeSpool :: MonadIO m => Spool -> m ()
-closeSpool Spool{..} = do
-  cancel inserter
-  liftIO $ SQLite.close conn
+closeSpool Spool{..} = cancel inserter >> liftIO (SQLite.close conn)
