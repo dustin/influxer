@@ -11,7 +11,7 @@ import           Control.Concurrent.STM     (STM, TQueue, TVar, atomically, flus
                                              newTVarIO, orElse, peekTQueue, readTVar, registerDelay, retry, swapTVar,
                                              writeTQueue)
 import           Control.Lens
-import           Control.Monad              (forever, when)
+import           Control.Monad              (forever, unless, when)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
@@ -95,7 +95,7 @@ parseValue BoolVal v
 parseValue IgnoreVal _  = Left "ignored"
 
 logAt :: (MonadLogger m, ToLogStr msg) => LogLevel -> msg -> m ()
-logAt l = logWithoutLoc "" l
+logAt = logWithoutLoc ""
 
 logErr :: (MonadLogger m, ToLogStr msg) => msg -> m ()
 logErr = logAt LevelError
@@ -134,7 +134,7 @@ supervise name f = do
     checkTimeout :: TVar Bool -> STM (Maybe a)
     checkTimeout v = do
       v' <- readTVar v
-      when (not v') retry
+      unless v' retry
       pure Nothing
 
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
@@ -154,7 +154,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
 
     handle' :: Influxer ()
     handle' = do
-      ts <- liftIO $ getCurrentTime
+      ts <- liftIO getCurrentTime
       case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) IgnoreExtractor ws of
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
@@ -178,7 +178,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
     mname :: MeasurementNamer -> Text
     mname (ConstName t') = t'
     mname (FieldNum 0)   = t
-    mname (FieldNum x)   = (splitOn "/" t) !! (x-1)
+    mname (FieldNum x)   = splitOn "/" t !! (x - 1)
 
     mvals :: (Text, MeasurementNamer) -> (Key, Key)
     mvals (a,m) = (fk a, fk . mname $ m)
@@ -297,7 +297,7 @@ run opts@Options{..} = do
   runStderrLoggingT . logfilt $ do
     spool <- newSpool wp optSpoolFile
     tq <- liftIO newTQueueIO
-    let hc = (HandleContext counter wp tq spool opts)
+    let hc = HandleContext counter wp tq spool opts
     flip runReaderT hc $ do
       async runInserter >>= link
       async runReporter >>= link

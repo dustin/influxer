@@ -86,7 +86,7 @@ parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> ref)
     ref = lexeme ("$" >> L.decimal)
 
 parseTags :: Parser Tags
-parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` (symbol ","))
+parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` symbol ",")
   where
     tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* symbol "=" <*> parsemn
 
@@ -121,7 +121,8 @@ parseWatch = do
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
 
 parseFile :: Parser a -> String -> IO a
-parseFile f s = pack <$> readFile s >>= either (fail.errorBundlePretty) pure . parse f s
+parseFile f s = readFile s >>= (either (fail . errorBundlePretty) pure . parse f s) . pack
+
 
 parseConfFile :: String -> IO InfluxerConf
 parseConfFile = parseFile parseInfluxerConf
