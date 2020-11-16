@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Spool (Spool, newSpool, insertSpool, closeSpool, count) where
+module Spool (Spool, newSpool, insertSpool, insertSpoolMany, closeSpool, count) where
 
 import           Control.Concurrent      (threadDelay)
 import           Control.Lens
@@ -93,6 +93,11 @@ runInserter wp conn = forever insertSome
 insertSpool :: MonadIO m => Spool -> UTCTime -> String -> Line UTCTime -> m ()
 insertSpool Spool{..} ts err l =
   liftIO $ execute conn insertStatement (ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
+
+insertSpoolMany :: MonadIO m => Spool -> [(UTCTime, Line UTCTime)] -> String -> m ()
+insertSpoolMany Spool{..} stuff err =
+  liftIO $ executeMany conn insertStatement [(ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
+                                            | (ts, l) <- stuff]
 
 count :: MonadIO m => Spool -> m Int
 count Spool{conn} = head . head <$> liftIO (query_ conn countStmt)

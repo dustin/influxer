@@ -1,6 +1,6 @@
 module LogStuff where
 
-import           Data.List (intercalate, span)
+import           Data.List (intercalate)
 
 deLine :: String -> String
 deLine = dedupSpace . intercalate " " . lines

@@ -7,8 +7,9 @@
 module Main where
 
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.STM     (STM, TVar, atomically, modifyTVar, newTVarIO, orElse, readTVar,
-                                             registerDelay, retry, swapTVar)
+import           Control.Concurrent.STM     (STM, TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO,
+                                             newTVarIO, orElse, peekTQueue, readTVar, registerDelay, retry, swapTVar,
+                                             writeTQueue)
 import           Control.Lens
 import           Control.Monad              (forever, when)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
@@ -16,20 +17,21 @@ import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
 import           Control.Monad.Logger       (LogLevel (..), LogStr, LoggingT, MonadLogger, ToLogStr, filterLogger,
                                              logWithoutLoc, runStderrLoggingT, toLogStr)
-import           Control.Monad.Reader       (ReaderT (..), asks, runReaderT)
+import           Control.Monad.Reader       (ReaderT (..), ask, asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.List                  (intercalate)
 import qualified Data.Map.Strict            as Map
-import           Data.Maybe                 (fromJust, fromMaybe, mapMaybe)
+import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, splitOn, unpack)
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..), Key, Line (..), LineField, WriteParams,
-                                             host, server, write, writeParams)
+                                             host, precision, scaleTo, server, writeByteString, writeParams)
+import           Database.InfluxDB.Line     (encodeLines)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
                                              ProtocolLevel (..), QoS (..), SubOptions (..), Topic, connectURI,
@@ -75,6 +77,7 @@ options = Options
 data HandleContext = HandleContext {
   counter :: TVar Int
   , wp    :: WriteParams
+  , inq   :: TQueue (UTCTime, Line UTCTime)
   , spool :: Spool
   , opts  :: Options
   }
@@ -156,21 +159,11 @@ handle ws unl _ PublishRequest{..} = unl $ do
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
-          exc <- deadlined (seconds 30) (asks wp >>= \w -> liftIO $ tryWrite l w)
-          case exc of
-            Just excuse -> do
-              logErr $ "influx error on " <> toLogStr t <> " -> " <> lstr v <> ": " <> toLogStr (deLine excuse)
-              asks spool >>= \s -> insertSpool s ts excuse l
-            Nothing     -> pure ()
+          q <- asks inq
+          (liftIO . atomically) $ writeTQueue q (ts, l)
 
     plusplus :: Influxer ()
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
-
-    deadlined :: Int -> Influxer (Maybe String) -> Influxer (Maybe String)
-    deadlined n a = fromMaybe (Just "timed out") <$> timeout n a
-
-    tryWrite :: Line UTCTime -> WriteParams -> IO (Maybe String)
-    tryWrite l w = catch (Nothing <$ write w l) (\e -> pure $ Just (show (e :: InfluxException)))
 
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
     extract _ IgnoreExtractor = Left "unexpected message"
@@ -270,6 +263,32 @@ runReporter = forever $ do
       Options{..} <- asks opts
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
+runInserter :: Influxer ()
+runInserter = ask >>= forever . go
+
+  where
+    go HandleContext{wp, inq, spool} = do
+      todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
+      logInfo $ "Inserting a batch of " <> toLogStr (length todo)
+      tryBatch todo
+
+        where
+          ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
+          tryBatch todo = catch mightInsert failed
+            where
+
+              mightInsert = do
+                m <- timeout (seconds 30) (liftIO $ writeByteString wp (ls todo))
+                case m of
+                  Just _  -> insertSpoolMany spool todo "timed out"
+                  Nothing -> pure ()
+
+              failed :: (MonadLogger m, MonadIO m) => InfluxException -> m ()
+              failed ex = do
+                let errs = (deLine . show) ex
+                logErr $ "influxdb live error " <> toLogStr errs
+                insertSpoolMany spool todo errs
+
 run :: Options -> IO ()
 run opts@Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
@@ -277,8 +296,10 @@ run opts@Options{..} = do
   counter <- newTVarIO 0
   runStderrLoggingT . logfilt $ do
     spool <- newSpool wp optSpoolFile
-    let hc = (HandleContext counter wp spool opts)
+    tq <- liftIO newTQueueIO
+    let hc = (HandleContext counter wp tq spool opts)
     flip runReaderT hc $ do
+      async runInserter >>= link
       async runReporter >>= link
       mapConcurrently_ runWatcher srcs
 
