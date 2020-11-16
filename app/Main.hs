@@ -152,7 +152,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
     handle' :: Influxer ()
     handle' = do
       ts <- liftIO $ getCurrentTime
-      case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) undefined ws of
+      case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) IgnoreExtractor ws of
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
@@ -173,6 +173,8 @@ handle ws unl _ PublishRequest{..} = unl $ do
     tryWrite l w = catch (Nothing <$ write w l) (\e -> pure $ Just (show (e :: InfluxException)))
 
     extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
+    extract _ IgnoreExtractor = Left "unexpected message"
+
     extract ts (ValEx vp tags fld mn) = case parseValue vp v of
                               Left x  -> Left x
                               Right v' -> Right $ Line (fk . mname $ mn) (Map.fromList $ mvals <$> tags)

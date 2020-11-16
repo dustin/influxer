@@ -14,8 +14,7 @@ module InfluxerConf (
 import           Control.Applicative        ((<|>))
 import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
-import           Text.Megaparsec            (Parsec, between, manyTill, noneOf,
-                                             option, parse, sepBy, some, try)
+import           Text.Megaparsec            (Parsec, between, manyTill, noneOf, option, parse, sepBy, some, try)
 import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
@@ -36,7 +35,9 @@ data Watch = Watch QOS Bool Text Extractor deriving(Show)
 
 type Tags = [(Text,MeasurementNamer)]
 
-data Extractor = ValEx ValueParser Tags MeasurementNamer MeasurementNamer | JSON JSONPExtractor deriving(Show)
+data Extractor = ValEx ValueParser Tags MeasurementNamer MeasurementNamer
+               | JSON JSONPExtractor
+               | IgnoreExtractor deriving(Show)
 
 data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show)
 
