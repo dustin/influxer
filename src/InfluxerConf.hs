@@ -25,25 +25,25 @@ import           Network.URI
 
 type Parser = Parsec Void Text
 
-newtype InfluxerConf = InfluxerConf [Source] deriving(Show)
+newtype InfluxerConf = InfluxerConf [Source] deriving(Show, Eq)
 
-data Source = Source URI [Watch] deriving(Show)
+data Source = Source URI [Watch] deriving(Show, Eq)
 
-data QOS = QOS0 | QOS1 | QOS2 deriving(Show)
+data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq)
 
-data Watch = Watch QOS Bool Text Extractor deriving(Show)
+data Watch = Watch QOS Bool Text Extractor deriving(Show, Eq)
 
 type Tags = [(Text,MeasurementNamer)]
 
 data Extractor = ValEx ValueParser Tags MeasurementNamer MeasurementNamer
                | JSON JSONPExtractor
-               | IgnoreExtractor deriving(Show)
+               | IgnoreExtractor deriving(Show, Eq)
 
-data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show)
+data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show, Eq)
 
-data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValueParser)] deriving(Show)
+data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValueParser)] deriving(Show, Eq)
 
-data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show)
+data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show, Eq)
 
 
 parseInfluxerConf :: Parser InfluxerConf
