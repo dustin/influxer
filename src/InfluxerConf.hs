@@ -59,17 +59,14 @@ sc = L.space space1 lineComment blockComment
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-symbol :: Text -> Parser Text
-symbol = L.symbol sc
-
 qstr :: Parser Text
 qstr = pack <$> (char '"' >> manyTill L.charLiteral (char '"'))
 
 parseSrc :: Parser Source
 parseSrc = do
-  ustr <- symbol "from" *> lexeme (some (noneOf ['\n', ' ']))
+  ustr <- lexeme "from" *> lexeme (some (noneOf ['\n', ' ']))
   let (Just u) = parseURI ustr
-  ws <- between (symbol "{") (symbol "}") (some $ try parseWatch)
+  ws <- between (lexeme "{") (lexeme "}") (some $ try parseWatch)
   pure $ Source u ws
 
 symbp :: [(Parser b, a)] -> Parser a
@@ -90,9 +87,9 @@ parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> ref)
     ref = lexeme ("$" >> L.decimal)
 
 parseTags :: Parser Tags
-parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` symbol ",")
+parseTags = option [] $ between (lexeme "[") (lexeme "]") (tag `sepBy` lexeme ",")
   where
-    tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* symbol "=" <*> parsemn
+    tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* lexeme "=" <*> parsemn
 
 parseWatch :: Parser Watch
 parseWatch = do
@@ -100,7 +97,7 @@ parseWatch = do
   q <- option QOS2 parseQoS
   t <- lexeme qstr
   x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr)
-       <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
+       <|> lexeme "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch q cons t x
 
   where
@@ -114,11 +111,11 @@ parseWatch = do
     parseQoS = symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
 
     jsonpWatch :: Parser JSONPExtractor
-    jsonpWatch = between (symbol "{") (symbol "}") parsePee
-      where parsePee = JSONPExtractor <$> (symbol "measurement" *> parsemn) <*> parseTags <*> some parseX
+    jsonpWatch = between (lexeme "{") (lexeme "}") parsePee
+      where parsePee = JSONPExtractor <$> (lexeme "measurement" *> parsemn) <*> parseTags <*> some parseX
 
-    parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
-      <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
+    parseX = try ( (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> parseValEx)
+      <|> (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> pure AutoVal
 
 parseFile :: Parser a -> String -> IO a
 parseFile f s = readFile s >>= (either (fail . errorBundlePretty) pure . parse f s) . pack
