@@ -62,11 +62,15 @@ lexeme = L.lexeme sc
 qstr :: Parser Text
 qstr = pack <$> (char '"' >> manyTill L.charLiteral (char '"'))
 
+-- between, but lexeme-wrapping surrounding parsers.
+bt :: Parser a -> Parser b -> Parser c -> Parser c
+bt a b = between (lexeme a) (lexeme b)
+
 parseSrc :: Parser Source
 parseSrc = do
   ustr <- lexeme "from" *> lexeme (some (noneOf ['\n', ' ']))
   let (Just u) = parseURI ustr
-  ws <- between (lexeme "{") (lexeme "}") (some $ try parseWatch)
+  ws <- bt "{" "}" (some $ try parseWatch)
   pure $ Source u ws
 
 symbp :: [(Parser b, a)] -> Parser a
@@ -81,37 +85,31 @@ parseValEx = symbp [("auto", AutoVal),
                     ("ignore", IgnoreVal)]
 
 parsemn :: Parser MeasurementNamer
-parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> ref)
-  where
-    ref :: Parser Int
-    ref = lexeme ("$" >> L.decimal)
+parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> lexeme ("$" >> L.decimal))
 
 parseTags :: Parser Tags
-parseTags = option [] $ between (lexeme "[") (lexeme "]") (tag `sepBy` lexeme ",")
+parseTags = option [] $ bt "[" "]" (tag `sepBy` lexeme ",")
   where
     tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* lexeme "=" <*> parsemn
 
 parseWatch :: Parser Watch
 parseWatch = do
   cons <- symbp [("watch", True), ("match", False)]
-  q <- option QOS2 parseQoS
+  q <- option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
   t <- lexeme qstr
   x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr)
        <|> lexeme "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch q cons t x
 
   where
-
     parseField :: Parser MeasurementNamer
     parseField = option (ConstName "value") ("field=" *> parsemn)
 
     parseMsr :: Parser MeasurementNamer
     parseMsr = option (FieldNum 0) ("measurement=" *> parsemn)
 
-    parseQoS = symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
-
     jsonpWatch :: Parser JSONPExtractor
-    jsonpWatch = between (lexeme "{") (lexeme "}") parsePee
+    jsonpWatch = bt "{" "}" parsePee
       where parsePee = JSONPExtractor <$> (lexeme "measurement" *> parsemn) <*> parseTags <*> some parseX
 
     parseX = try ( (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> parseValEx)
