@@ -12,6 +12,7 @@ module InfluxerConf (
   parseConfFile) where
 
 import           Control.Applicative        ((<|>))
+import           Data.Foldable              (asum)
 import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
 import           Text.Megaparsec            (Parsec, between, manyTill, noneOf, option, parse, sepBy, some, try)
@@ -71,13 +72,16 @@ parseSrc = do
   ws <- between (symbol "{") (symbol "}") (some $ try parseWatch)
   pure $ Source u ws
 
+symbp :: [(Parser b, a)] -> Parser a
+symbp = asum . map (\(p,a) -> a <$ lexeme p)
+
 parseValEx :: Parser ValueParser
-parseValEx = AutoVal <$ symbol "auto"
-             <|> IntVal <$ symbol "int"
-             <|> FloatVal <$ symbol "float"
-             <|> BoolVal <$ symbol "bool"
-             <|> StringVal <$ symbol "string"
-             <|> IgnoreVal <$ symbol "ignore"
+parseValEx = symbp [("auto", AutoVal),
+                    ("int", IntVal),
+                    ("float", FloatVal),
+                    ("bool", BoolVal),
+                    ("string", StringVal),
+                    ("ignore", IgnoreVal)]
 
 parsemn :: Parser MeasurementNamer
 parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> ref)
@@ -92,10 +96,11 @@ parseTags = option [] $ between (symbol "[") (symbol "]") (tag `sepBy` symbol ",
 
 parseWatch :: Parser Watch
 parseWatch = do
-  cons <- (True <$ symbol "watch") <|> (False <$ symbol "match")
+  cons <- symbp [("watch", True), ("match", False)]
   q <- option QOS2 parseQoS
   t <- lexeme qstr
-  x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr) <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
+  x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr)
+       <|> symbol "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch q cons t x
 
   where
@@ -106,23 +111,17 @@ parseWatch = do
     parseMsr :: Parser MeasurementNamer
     parseMsr = option (FieldNum 0) ("measurement=" *> parsemn)
 
-    parseQoS = (QOS0 <$ lexeme "qos0") <|> (QOS1 <$ lexeme "qos1") <|> (QOS2 <$ lexeme "qos2")
+    parseQoS = symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
 
     jsonpWatch :: Parser JSONPExtractor
     jsonpWatch = between (symbol "{") (symbol "}") parsePee
-
-      where parsePee = do
-              m <-  symbol "measurement" *> parsemn
-              tags <- parseTags
-              xs <- some parseX
-              pure $ JSONPExtractor m tags xs
+      where parsePee = JSONPExtractor <$> (symbol "measurement" *> parsemn) <*> parseTags <*> some parseX
 
     parseX = try ( (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> parseValEx)
       <|> (,,) <$> lexeme qstr <* symbol "<-" <*> lexeme qstr <*> pure AutoVal
 
 parseFile :: Parser a -> String -> IO a
 parseFile f s = readFile s >>= (either (fail . errorBundlePretty) pure . parse f s) . pack
-
 
 parseConfFile :: String -> IO InfluxerConf
 parseConfFile = parseFile parseInfluxerConf

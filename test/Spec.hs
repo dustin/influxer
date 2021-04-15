@@ -23,7 +23,7 @@ testParser = do
                                            ("voltage","/ENERGY/Voltage",AutoVal),
                                            ("current","/ENERGY/Current",AutoVal)])),
                                  Watch QOS2 False "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value") (FieldNum 0)),
-                                 Watch QOS2 True "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
+                                 Watch QOS1 True "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
     cfg
 
 tests :: [TestTree]
