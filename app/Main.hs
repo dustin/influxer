@@ -37,7 +37,7 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), Messag
                                              ProtocolLevel (..), QoS (..), SubOptions (..), Topic, connectURI,
                                              mqttConfig, normalDisconnect, publishq, subOptions, subscribe, svrProps,
                                              waitForClient)
-import           Network.MQTT.Topic         (match)
+import           Network.MQTT.Topic         (match, unTopic)
 import           Network.MQTT.Types         (PublishRequest (..), RetainHandling (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, fullDesc, help, helper, info, long, maybeReader,
@@ -83,6 +83,9 @@ data HandleContext = HandleContext {
   }
 
 type Influxer = ReaderT HandleContext (LoggingT IO)
+
+instance ToLogStr Topic where
+  toLogStr = toLogStr . unTopic
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
@@ -142,14 +145,15 @@ type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 handle :: [Watch] -> (Influxer () -> IO ()) -> MQTTCB
 handle ws unl _ PublishRequest{..} = unl $ do
   logDbg $ "Processing " <> lstr t <> " mid" <> lstr _pubPktID <> " " <> lstr _pubProps
-  x <- supervise (unpack t) handle'
+  x <- supervise ((unpack . unTopic) t) handle'
   logDbg $ "Finished processing " <> lstr t <> " mid" <> lstr _pubPktID <> " with " <> lstr x
   case x of
     Left e  -> logErr $ "error on supervised handler for " <> toLogStr t <> ": " <> lstr e
     Right _ -> plusplus
 
   where
-    t = (TE.decodeUtf8 . BL.toStrict) _pubTopic
+    txtt = (TE.decodeUtf8 . BL.toStrict) _pubTopic
+    t = fk txtt
     v = _pubBody
 
     handle' :: Influxer ()
@@ -177,8 +181,8 @@ handle ws unl _ PublishRequest{..} = unl $ do
 
     mname :: MeasurementNamer -> Text
     mname (ConstName t') = t'
-    mname (FieldNum 0)   = t
-    mname (FieldNum x)   = splitOn "/" t !! (x - 1)
+    mname (FieldNum 0)   = txtt
+    mname (FieldNum x)   = splitOn "/" txtt !! (x - 1)
 
     mvals :: (Text, MeasurementNamer) -> (Key, Key)
     mvals (a,m) = (fk a, fk . mname $ m)

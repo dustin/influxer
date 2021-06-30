@@ -15,13 +15,12 @@ import           Control.Applicative        ((<|>))
 import           Data.Foldable              (asum)
 import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
+import           Network.MQTT.Topic
+import           Network.URI
 import           Text.Megaparsec            (Parsec, between, manyTill, noneOf, option, parse, sepBy, some, try)
 import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
-
-
-import           Network.URI
 
 
 type Parser = Parsec Void Text
@@ -32,7 +31,7 @@ data Source = Source URI [Watch] deriving(Show, Eq)
 
 data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq)
 
-data Watch = Watch QOS Bool Text Extractor deriving(Show, Eq)
+data Watch = Watch QOS Bool Filter Extractor deriving(Show, Eq)
 
 type Tags = [(Text,MeasurementNamer)]
 
@@ -92,12 +91,14 @@ parseWatch :: Parser Watch
 parseWatch = do
   cons <- symbp [("watch", True), ("match", False)]
   q <- option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
-  t <- lexeme qstr
+  t <- lexeme aFilter
   x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr)
        <|> lexeme "jsonp" *> (JSON <$> jsonpWatch)
   pure $ Watch q cons t x
 
   where
+    aFilter = qstr >>= maybe (fail "bad filter") pure . mkFilter
+
     parseField :: Parser MeasurementNamer
     parseField = option (ConstName "value") ("field=" *> parsemn)
 
