@@ -16,16 +16,12 @@ packages:
     git: https://github.com/seagreen/hjsonpointer.git
     commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
 - completed:
-    name: net-mqtt
-    version: 0.8.0.0
-    git: https://github.com/dustin/mqtt-hs
+    hackage: net-mqtt-0.8.0.0@sha256:8e7399d782ecd2edc9e58534f58e881a621ebd64fa10f28c3791b5f170df2385,4146
     pantry-tree:
-      size: 1047
-      sha256: 9e32e534499102bf33fa1daaa44178f1c2fe9489ab0d72151d9cd388d7c6e2b9
-    commit: 9024e328d85871e853dd6a9d960b2530b04dc1c3
+      size: 701
+      sha256: 102df8b02019b5b776788d5f518c4fefcd504daf163832ef530dc0c69505c622
   original:
-    git: https://github.com/dustin/mqtt-hs
-    commit: 9024e328d85871e853dd6a9d960b2530b04dc1c3
+    hackage: net-mqtt-0.8.0.0@sha256:8e7399d782ecd2edc9e58534f58e881a621ebd64fa10f28c3791b5f170df2385,4146
 snapshots:
 - completed:
     size: 585393
