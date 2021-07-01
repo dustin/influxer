@@ -72,7 +72,7 @@ options = Options
   <*> switch (long "clean" <> short 'c' <> help "Use a clean sesssion by default")
   <*> switch (long "verbose" <> short 'v' <> help "Log more stuff")
   <*> option (maybeReader parseURI) (long "mqtt-uri" <> showDefault <> value (fromJust $ parseURI "mqtt://localhost/") <> help "mqtt broker URI")
-  <*> strOption (long "mqtt-prefix" <> showDefault <> value "tmp/influxer/" <> help "MQTT topic prefix")
+  <*> strOption (long "mqtt-prefix" <> showDefault <> value "tmp/influxer" <> help "MQTT topic prefix")
 
 data HandleContext = HandleContext {
   counter :: TVar Int
