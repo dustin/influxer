@@ -64,8 +64,7 @@ bt a b = between (lexeme a) (lexeme b)
 
 parseSrc :: Parser Source
 parseSrc = do
-  ustr <- lexeme "from" *> lexeme (some (noneOf ['\n', ' ']))
-  let (Just u) = parseURI ustr
+  u <- maybe (fail "bad URL") pure . parseURI =<< lexeme "from" *> lexeme (some (noneOf ['\n', ' ']))
   Source u <$> bt "{" "}" (some parseWatch)
 
 symbp :: [(Parser b, a)] -> Parser a
