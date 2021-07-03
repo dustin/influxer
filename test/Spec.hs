@@ -17,7 +17,7 @@ testParser = do
                                 [Watch QOS2 True "oro/+/tele/SENSOR"
                                  (JSON (JSONPExtractor (FieldNum 1) [] [
                                            ("total","/ENERGY/Total",AutoVal),
-                                           ("yesterday","/ENERGY/Yesterday",AutoVal),
+                                           ("yesterday","/ENERGY/Yesterday",FloatVal),
                                            ("today","/ENERGY/Today",AutoVal),
                                            ("power","/ENERGY/Power",AutoVal),
                                            ("voltage","/ENERGY/Voltage",AutoVal),

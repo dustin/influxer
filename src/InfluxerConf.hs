@@ -109,8 +109,7 @@ parseWatch = do
     jsonpWatch = bt "{" "}" parsePee
       where parsePee = JSONPExtractor <$> (lexeme "measurement" *> parsemn) <*> parseTags <*> some parseX
 
-    parseX = try ( (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> parseValEx)
-      <|> (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> pure AutoVal
+    parseX = (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> option AutoVal parseValEx
 
 parseFile :: Parser a -> String -> IO a
 parseFile f s = readFile s >>= (either (fail . errorBundlePretty) pure . parse f s) . pack
