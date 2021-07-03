@@ -53,7 +53,7 @@ import           Spool
 data Options = Options {
   optInfluxDBHost :: Text
   , optInfluxDB   :: String
-  , optConfFile   :: String
+  , optConfFile   :: FilePath
   , optSpoolFile  :: String
   , optProtocol   :: ProtocolLevel
   , optClean      :: Bool
