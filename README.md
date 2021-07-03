@@ -197,16 +197,19 @@ into explicitly named fields.  The format is `jsonp { ... }` where
 `...` contains
 
     measurement "mname" [tag1="tagv"]
+    "field1" <- "/json/path" auto
+    "field2" <- "/json/path2"
+    "field3" <- "/json/path3" int
 
 Both `"mname"` and `"tagv"` can use `$` topic vars and tags may be
 omitted if you don't want any.
 
-After your measurement declaration, we have specific field extractors
-in the form of:
+After your measurement declaration, we have one or more specific field
+extractors in the form of:
 
-    "fieldname" <- "/json/path" parser
+    "fieldname" <- "/json/path" auto
 
-`parser` is optional (`auto` is the default).
+`auto` may be omitted or replaced with any other simple value parser.
 
 [mqtt]: https://mqtt.org
 [influxdb]: https://www.influxdata.com
