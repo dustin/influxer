@@ -40,7 +40,7 @@ import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), Messag
 import           Network.MQTT.Topic         (match, unTopic)
 import           Network.MQTT.Types         (PublishRequest (..), RetainHandling (..))
 import           Network.URI                (URI, parseURI)
-import           Options.Applicative        (Parser, execParser, fullDesc, help, helper, info, long, maybeReader,
+import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
 import           Text.Read                  (readEither)
 import           UnliftIO.Async             (async, link, mapConcurrently_, waitCatch, waitCatchSTM, withAsync)
@@ -55,7 +55,7 @@ data Options = Options {
   , optInfluxDB   :: String
   , optConfFile   :: String
   , optSpoolFile  :: String
-  , optV5         :: Bool
+  , optProtocol   :: ProtocolLevel
   , optClean      :: Bool
   , optVerbose    :: Bool
   , optMQTTURL    :: URI
@@ -68,7 +68,7 @@ options = Options
   <*> strOption (long "dbname" <> showDefault <> value "influxer" <> help "influxdb database")
   <*> strOption (long "conf" <> showDefault <> value "influx.conf" <> help "config file")
   <*> strOption (long "spool" <> showDefault <> value "influx.spool" <> help "spool file to store failed influxing")
-  <*> switch (long "mqtt5" <> short '5' <> help "Use MQTT5 by default")
+  <*> flag Protocol311 Protocol50 (long "mqtt5" <> short '5' <> help "Use MQTT5 by default")
   <*> switch (long "clean" <> short 'c' <> help "Use a clean sesssion by default")
   <*> switch (long "verbose" <> short 'v' <> help "Log more stuff")
   <*> option (maybeReader parseURI) (long "mqtt-uri" <> showDefault <> value (fromJust $ parseURI "mqtt://localhost/") <> help "mqtt broker URI")
@@ -211,15 +211,11 @@ handle ws unl _ PublishRequest{..} = unl $ do
         jt _ _                  = Nothing
 
 
-prot :: Bool -> ProtocolLevel
-prot True  = Protocol50
-prot False = Protocol311
-
 runWatcher :: Source -> Influxer ()
 runWatcher (Source uri watchers) = do
   Options{..} <- asks opts
   mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle watchers unl,
-                                                    _protocol=prot optV5, _cleanSession=optClean,
+                                                    _protocol=optProtocol, _cleanSession=optClean,
                                                     _connProps=[PropSessionExpiryInterval 3600,
                                                                 PropTopicAliasMaximum 1024,
                                                                 PropRequestProblemInformation 1,
@@ -256,7 +252,7 @@ runReporter = forever $ do
   where
     connto = do
       Options{..} <- asks opts
-      liftIO $ connectURI mqttConfig{_protocol=prot optV5, _cleanSession=True, _connProps=[]} optMQTTURL
+      liftIO $ connectURI mqttConfig{_protocol=optProtocol, _cleanSession=True, _connProps=[]} optMQTTURL
 
     disco = liftIO . normalDisconnect
 
