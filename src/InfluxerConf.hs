@@ -45,15 +45,11 @@ data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValuePa
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show, Eq)
 
-
 parseInfluxerConf :: Parser InfluxerConf
 parseInfluxerConf = InfluxerConf <$> some parseSrc
 
-sc :: Parser () -- ‘sc’ stands for “space consumer”
-sc = L.space space1 (L.skipLineComment "//") (L.skipBlockComment "/*" "*/")
-
 lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
+lexeme = L.lexeme (L.space space1 (L.skipLineComment "//") (L.skipBlockComment "/*" "*/"))
 
 qstr :: Parser Text
 qstr = pack <$> (char '"' >> manyTill L.charLiteral (char '"'))
