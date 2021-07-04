@@ -28,8 +28,9 @@ parseValue IgnoreVal _  = Left "ignored"
 bestMatch :: Topic -> [Watch] -> Extractor
 bestMatch t = foldr exes IgnoreExtractor
   where
-    exes (Watch _ p e) o = if p `match` t then e else o
-    exes (Match p e)   o = if p `match` t then e else o
+    exes (Watch _ p e) o = mf p e o
+    exes (Match   p e) o = mf p e o
+    mf p e o = if p `match` t then e else o
 
 subs :: Source -> [(Filter, SubOptions)]
 subs (Source _ ws) = [(t,baseOpts{_subQoS=q qos}) | (Watch qos t _) <- ws]

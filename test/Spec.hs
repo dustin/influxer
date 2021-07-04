@@ -7,7 +7,10 @@ import           Test.Tasty.QuickCheck as QC
 
 import           Network.MQTT.Client   (QoS (..), SubOptions (..), subOptions)
 import           Network.MQTT.Types    (RetainHandling (..))
+import           Network.MQTT.Topic
+import qualified Data.Text as T
 import           Network.URI           (parseURI)
+import           Network.MQTT.Arbitrary
 
 import           Influxer
 import           InfluxerConf
@@ -34,9 +37,32 @@ testParser = do
   assertEqual "" [("oro/+/tele/SENSOR", baseOpts {_subQoS = QoS2}),
                   ("sj/#", baseOpts {_subQoS = QoS1})] ss
 
+data MatchInput = MatchInput Extractor Topic [Watch] deriving (Show, Eq)
+
+instance Arbitrary MatchInput where
+  arbitrary = do
+    MatchingTopic (t, fs) <- arbitrary
+    before <- listOf (notMatching t)
+    after <- arbitrary
+    watchfun <- infiniteListOf cons
+    let allWatches = zipWith3 id watchfun (before <> fs <> after) extractors
+        want = head $ drop (length before) extractors
+    pure $ MatchInput want t allWatches
+
+      where
+        cons = oneof [Watch <$> arbitraryBoundedEnum, pure Match]
+        extractors = [ValEx AutoVal [] (FieldNum i) (FieldNum i) | i <- [0..]]
+        notMatching t = arbitrary `suchThat` (not . (`match` t))
+
+  shrink (MatchInput a t xs) = MatchInput a t <$> shrinkList (const []) xs
+
+propBestMatch :: MatchInput -> Property
+propBestMatch (MatchInput e t ws) = bestMatch t ws === e
+
 tests :: [TestTree]
 tests = [
-  testCase "example conf" testParser
+  testCase "example conf" testParser,
+  testProperty "best match" propBestMatch
   ]
 
 main :: IO ()

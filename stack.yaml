@@ -40,7 +40,7 @@ packages:
 extra-deps:
 - git: https://github.com/seagreen/hjsonpointer.git
   commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
-- net-mqtt-0.8.0.0@sha256:8e7399d782ecd2edc9e58534f58e881a621ebd64fa10f28c3791b5f170df2385,4146
+- net-mqtt-0.8.0.1@sha256:fd65471253ae406f7be039f9465fc3a57f6e6490475d0036e36e392de7cac481,4146
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

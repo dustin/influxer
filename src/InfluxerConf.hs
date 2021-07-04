@@ -29,7 +29,7 @@ newtype InfluxerConf = InfluxerConf [Source] deriving(Show, Eq)
 
 data Source = Source URI [Watch] deriving(Show, Eq)
 
-data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq)
+data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq, Bounded, Enum)
 
 data Watch = Watch QOS Filter Extractor
            | Match Filter Extractor
