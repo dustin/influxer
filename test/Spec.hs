@@ -66,17 +66,20 @@ data ParseInput = ParseInput String (Either String LineField) ValueParser BL.Byt
   deriving (Eq, Show)
 
 instance Arbitrary ParseInput where
-  arbitrary = oneof [ autoCase, floatCase, intCase, stringCase, trueCase, falseCase ]
+  arbitrary = oneof [ autoCase, floatCase, intiCase, intfCase, stringCase, trueCase, falseCase, ignoreCase ]
     where
       autoCase = do
         v <- arbitrary
-        pure $ ParseInput "auto" (Right (FieldFloat v)) FloatVal (BC.pack . show $ v)
+        pure $ ParseInput "auto" (Right (FieldFloat v)) AutoVal (BC.pack . show $ v)
       floatCase = do
         v <- arbitrary
         pure $ ParseInput "float" (Right (FieldFloat v)) FloatVal (BC.pack . show $ v)
-      intCase = do
-        v <- choose (-10000000,10000000)
-        pure $ ParseInput "int" (Right (FieldInt v)) IntVal (BC.pack . show $ v)
+      intiCase = do
+        v <- arbitrary
+        pure $ ParseInput "int(i)" (Right (FieldInt v)) IntVal (BC.pack . show $ v)
+      intfCase = do
+        v <- choose (-100000, 100000)
+        pure $ ParseInput "int(f)" (Right (FieldInt v)) IntVal (BC.pack . (<>".0") . show $ v)
       stringCase = do
         str <- listOf (elements ['a'..'z'])
         pure $ ParseInput "str" (Right (FieldString (T.pack str))) StringVal (BC.pack str)
@@ -84,6 +87,7 @@ instance Arbitrary ParseInput where
       yeses = ["ON", "on", "true", "1"]
       trueCase = ParseInput "bool(true)" (Right (FieldBool True)) BoolVal <$> elements yeses
       falseCase = ParseInput "bool(false)" (Right (FieldBool False)) BoolVal <$> (BC.pack <$> arbitrary) `suchThat` (`notElem` yeses)
+      ignoreCase = pure $ ParseInput "ignore" (Left "ignored") IgnoreVal "whatever"
 
 propParseValue :: ParseInput -> Property
 propParseValue (ParseInput l f v b) = label l $ parseValue v b === f

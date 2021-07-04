@@ -18,7 +18,9 @@ import           InfluxerConf
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
 parseValue FloatVal v   = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
-parseValue IntVal v     = FieldInt . floor . toRealFloat <$> readEither (BC.unpack v)
+parseValue IntVal v
+  | '.' `BC.elem` v     = FieldInt . floor . toRealFloat <$> readEither (BC.unpack v)
+  | otherwise           = FieldInt <$> readEither (BC.unpack v)
 parseValue StringVal v  = (Right . FieldString . TE.decodeUtf8 . BL.toStrict) v
 parseValue BoolVal v
   | v `elem` ["ON", "on", "true", "1"] = Right $ FieldBool True
