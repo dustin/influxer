@@ -14,7 +14,7 @@ testParser = do
   cfg <- parseConfFile "test/test.conf"
   let (Just u) = parseURI "mqtt://localhost/#influxerdev"
   assertEqual "" (InfluxerConf [Source u
-                                [Watch QOS2 True "oro/+/tele/SENSOR"
+                                [Watch QOS2 "oro/+/tele/SENSOR"
                                  (JSON (JSONPExtractor (FieldNum 1) [] [
                                            ("total","/ENERGY/Total",AutoVal),
                                            ("yesterday","/ENERGY/Yesterday",FloatVal),
@@ -22,8 +22,8 @@ testParser = do
                                            ("power","/ENERGY/Power",AutoVal),
                                            ("voltage","/ENERGY/Voltage",AutoVal),
                                            ("current","/ENERGY/Current",AutoVal)])),
-                                 Watch QOS2 False "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value") (FieldNum 0)),
-                                 Watch QOS1 True "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
+                                 Match "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value") (FieldNum 0)),
+                                 Watch QOS1 "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
     cfg
 
 tests :: [TestTree]

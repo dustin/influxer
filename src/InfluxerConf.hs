@@ -31,7 +31,9 @@ data Source = Source URI [Watch] deriving(Show, Eq)
 
 data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq)
 
-data Watch = Watch QOS Bool Filter Extractor deriving(Show, Eq)
+data Watch = Watch QOS Filter Extractor
+           | Match Filter Extractor
+           deriving (Show, Eq)
 
 type Tags = [(Text,MeasurementNamer)]
 
@@ -84,14 +86,15 @@ parseTags = option [] $ bt "[" "]" (tag `sepBy` lexeme ",")
 
 parseWatch :: Parser Watch
 parseWatch = do
-  cons <- symbp [("watch", True), ("match", False)]
-  q <- option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)]
+  cons <- Match <$ m <|> Watch <$> w
   t <- lexeme aFilter
   x <- (ValEx <$> try parseValEx <*> parseTags <*> parseField <*> parseMsr)
        <|> lexeme "jsonp" *> (JSON <$> jsonpWatch)
-  pure $ Watch q cons t x
+  pure $ cons t x
 
   where
+    m = lexeme "match"
+    w = lexeme "watch" *> (option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)])
     aFilter = qstr >>= maybe (fail "bad filter") pure . mkFilter
 
     parseField :: Parser MeasurementNamer

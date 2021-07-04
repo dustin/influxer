@@ -159,12 +159,15 @@ handle ws unl _ PublishRequest{..} = unl $ do
     handle' :: Influxer ()
     handle' = do
       ts <- liftIO getCurrentTime
-      case extract ts $ foldr (\(Watch _ _ p e) o -> if p `match` t then e else o) IgnoreExtractor ws of
+      case extract ts $ foldr exes IgnoreExtractor ws of
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
           q <- asks inq
           (liftIO . atomically) $ writeTQueue q (ts, l)
+
+    exes (Watch _ p e) o = if p `match` t then e else o
+    exes (Match p e)   o = if p `match` t then e else o
 
     plusplus :: Influxer ()
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
@@ -223,7 +226,7 @@ runWatcher (Source uri watchers) = do
   cprops <- liftIO $ svrProps mc
   logInfo $ "Connected to " <> lstr uri <> ": " <> lstr cprops
   let baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
-      tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos w t _) <- watchers, w]
+      tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos t _) <- watchers]
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> toLogStr (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   cnt <- asks counter
