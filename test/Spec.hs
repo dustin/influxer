@@ -3,14 +3,17 @@
 import           Test.QuickCheck
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck as QC
+import           Test.Tasty.QuickCheck      as QC
 
-import           Network.MQTT.Client   (QoS (..), SubOptions (..), subOptions)
-import           Network.MQTT.Types    (RetainHandling (..))
-import           Network.MQTT.Topic
-import qualified Data.Text as T
-import           Network.URI           (parseURI)
+import qualified Data.ByteString.Lazy       as BL
+import qualified Data.ByteString.Lazy.Char8 as BC
+import qualified Data.Text                  as T
+import           Database.InfluxDB          (Field (..), LineField)
 import           Network.MQTT.Arbitrary
+import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
+import           Network.MQTT.Topic
+import           Network.MQTT.Types         (RetainHandling (..))
+import           Network.URI                (parseURI)
 
 import           Influxer
 import           InfluxerConf
@@ -59,10 +62,37 @@ instance Arbitrary MatchInput where
 propBestMatch :: MatchInput -> Property
 propBestMatch (MatchInput e t ws) = bestMatch t ws === e
 
+data ParseInput = ParseInput String (Either String LineField) ValueParser BL.ByteString
+  deriving (Eq, Show)
+
+instance Arbitrary ParseInput where
+  arbitrary = oneof [ autoCase, floatCase, intCase, stringCase, trueCase, falseCase ]
+    where
+      autoCase = do
+        v <- arbitrary
+        pure $ ParseInput "auto" (Right (FieldFloat v)) FloatVal (BC.pack . show $ v)
+      floatCase = do
+        v <- arbitrary
+        pure $ ParseInput "float" (Right (FieldFloat v)) FloatVal (BC.pack . show $ v)
+      intCase = do
+        v <- choose (-10000000,10000000)
+        pure $ ParseInput "int" (Right (FieldInt v)) IntVal (BC.pack . show $ v)
+      stringCase = do
+        str <- listOf (elements ['a'..'z'])
+        pure $ ParseInput "str" (Right (FieldString (T.pack str))) StringVal (BC.pack str)
+      -- bool cases
+      yeses = ["ON", "on", "true", "1"]
+      trueCase = ParseInput "bool(true)" (Right (FieldBool True)) BoolVal <$> elements yeses
+      falseCase = ParseInput "bool(false)" (Right (FieldBool False)) BoolVal <$> (BC.pack <$> arbitrary) `suchThat` (`notElem` yeses)
+
+propParseValue :: ParseInput -> Property
+propParseValue (ParseInput l f v b) = label l $ parseValue v b === f
+
 tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
-  testProperty "best match" propBestMatch
+  testProperty "best match" propBestMatch,
+  testProperty "parseValue" propParseValue
   ]
 
 main :: IO ()
