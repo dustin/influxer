@@ -34,18 +34,18 @@ import           Database.InfluxDB          (Field (..), InfluxException (..), K
 import           Database.InfluxDB.Line     (encodeLines)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
-                                             ProtocolLevel (..), QoS (..), SubOptions (..), Topic, connectURI,
-                                             mqttConfig, normalDisconnect, publishq, subOptions, subscribe, svrProps,
+                                             ProtocolLevel (..), QoS (..), Topic, connectURI,
+                                             mqttConfig, normalDisconnect, publishq, subscribe, svrProps,
                                              waitForClient)
-import           Network.MQTT.Topic         (match, unTopic)
-import           Network.MQTT.Types         (PublishRequest (..), RetainHandling (..))
+import           Network.MQTT.Topic         (unTopic)
+import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
-import           Text.Read                  (readEither)
 import           UnliftIO.Async             (async, link, mapConcurrently_, waitCatch, waitCatchSTM, withAsync)
 import           UnliftIO.Timeout           (timeout)
 
+import           Influxer
 import           InfluxerConf
 import           LogStuff
 import           Spool
@@ -86,16 +86,6 @@ type Influxer = ReaderT HandleContext (LoggingT IO)
 
 instance ToLogStr Topic where
   toLogStr = toLogStr . unTopic
-
-parseValue :: ValueParser -> BL.ByteString -> Either String LineField
-parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
-parseValue FloatVal v   = FieldFloat . toRealFloat <$> readEither (BC.unpack v)
-parseValue IntVal v     = FieldInt . floor . toRealFloat <$> readEither (BC.unpack v)
-parseValue StringVal v  = (Right . FieldString . TE.decodeUtf8 . BL.toStrict) v
-parseValue BoolVal v
-  | v `elem` ["ON", "on", "true", "1"] = Right $ FieldBool True
-  | otherwise = Right $ FieldBool False
-parseValue IgnoreVal _  = Left "ignored"
 
 logAt :: (MonadLogger m, ToLogStr msg) => LogLevel -> msg -> m ()
 logAt = logWithoutLoc ""
@@ -159,15 +149,12 @@ handle ws unl _ PublishRequest{..} = unl $ do
     handle' :: Influxer ()
     handle' = do
       ts <- liftIO getCurrentTime
-      case extract ts $ foldr exes IgnoreExtractor ws of
+      case extract ts $ bestMatch t ws of
         Left "ignored" -> pure ()
         Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
         Right l -> do
           q <- asks inq
           (liftIO . atomically) $ writeTQueue q (ts, l)
-
-    exes (Watch _ p e) o = if p `match` t then e else o
-    exes (Match p e)   o = if p `match` t then e else o
 
     plusplus :: Influxer ()
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
@@ -215,7 +202,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
 
 
 runWatcher :: Source -> Influxer ()
-runWatcher (Source uri watchers) = do
+runWatcher src@(Source uri watchers) = do
   Options{..} <- asks opts
   mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle watchers unl,
                                                     _protocol=optProtocol, _cleanSession=optClean,
@@ -225,8 +212,7 @@ runWatcher (Source uri watchers) = do
                                                                 PropRequestResponseInformation 1]} uri
   cprops <- liftIO $ svrProps mc
   logInfo $ "Connected to " <> lstr uri <> ": " <> lstr cprops
-  let baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
-      tosub = [(t,baseOpts{_subQoS=q qos}) | (Watch qos t _) <- watchers]
+  let tosub = subs src
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> toLogStr (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
   cnt <- asks counter
@@ -234,10 +220,6 @@ runWatcher (Source uri watchers) = do
 
   where
     s = either show show
-
-    q QOS0 = QoS0
-    q QOS1 = QoS1
-    q QOS2 = QoS2
 
     periodicallyLog v = forever $ do
       delaySeconds 60
