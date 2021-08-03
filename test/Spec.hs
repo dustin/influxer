@@ -32,12 +32,21 @@ testParser = do
                                            ("voltage","/ENERGY/Voltage",AutoVal),
                                            ("current","/ENERGY/Current",AutoVal)])),
                                  Match "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value") (FieldNum 0)),
+                                 Watch QOS0 "oro/something" (ValEx IntVal [("tag1",ConstName "a"),
+                                                                           ("tag2",FieldNum 2)]
+                                                             (ConstName "aval")
+                                                             (ConstName "amess")),
+                                 Watch QOS2 "oro/boo" (ValEx BoolVal [("tag1",ConstName "a")]
+                                                       (ConstName "value") (FieldNum 0)),
+                                 Match "oro/str" (ValEx StringVal [] (ConstName "value") (FieldNum 0)),
                                  Watch QOS1 "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
     cfg
 
   let ss = foldMap subs srcs
       baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
   assertEqual "" [("oro/+/tele/SENSOR", baseOpts {_subQoS = QoS2}),
+                  ("oro/something", baseOpts{_subQoS = QoS0}),
+                  ("oro/boo", baseOpts{_subQoS = QoS2}),
                   ("sj/#", baseOpts {_subQoS = QoS1})] ss
 
 data MatchInput = MatchInput Extractor Topic [Watch] deriving (Show, Eq)
