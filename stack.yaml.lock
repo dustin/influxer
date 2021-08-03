@@ -16,15 +16,15 @@ packages:
     git: https://github.com/seagreen/hjsonpointer.git
     commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
 - completed:
-    hackage: net-mqtt-0.8.0.1@sha256:fd65471253ae406f7be039f9465fc3a57f6e6490475d0036e36e392de7cac481,4146
+    hackage: net-mqtt-0.8.0.2@sha256:def2fa42d89763550c758a2b367e54d3b23f1f9202c6e0fff8798f04b92f5333,4146
     pantry-tree:
       size: 701
-      sha256: a80e6400eeb6f296bd38a17aa6ebedeb338f76d6520509a0357669ae376afc0f
+      sha256: 839dcd69a478c4746b9f8739bc27243540efcf82a528739e0335081c7c50106a
   original:
-    hackage: net-mqtt-0.8.0.1@sha256:fd65471253ae406f7be039f9465fc3a57f6e6490475d0036e36e392de7cac481,4146
+    hackage: net-mqtt-0.8.0.2
 snapshots:
 - completed:
-    size: 585393
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/0.yaml
-    sha256: c632012da648385b9fa3c29f4e0afd56ead299f1c5528ee789058be410e883c0
-  original: lts-18.0
+    size: 585817
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/5.yaml
+    sha256: 22d24d0dacad9c1450b9a174c28d203f9bb482a2a8da9710a2f2a9f4afee2887
+  original: lts-18.5
