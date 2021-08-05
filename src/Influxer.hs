@@ -2,6 +2,13 @@
 
 module Influxer where
 
+import           Control.Concurrent         (threadDelay)
+import           Control.Concurrent.STM     (retry)
+import           Control.Monad              (unless)
+import           Control.Monad.Catch        (SomeException)
+import           Control.Monad.IO.Class     (MonadIO (..))
+import           Control.Monad.IO.Unlift    (MonadUnliftIO (..))
+import           Control.Monad.Logger       (MonadLogger)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.Scientific            (toRealFloat)
@@ -11,9 +18,39 @@ import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptio
 import           Network.MQTT.Topic         (Filter, Topic, match)
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Text.Read                  (readEither)
-
+import           UnliftIO                   (STM, TVar, async, atomically, orElse, readTVar, registerDelay, waitCatch,
+                                             waitCatchSTM)
 
 import           InfluxerConf
+import           LogStuff
+
+seconds :: Int -> Int
+seconds = (* 1000000)
+
+delaySeconds :: MonadIO m => Int -> m ()
+delaySeconds = liftIO . threadDelay . seconds
+
+supervise :: (MonadUnliftIO m, MonadLogger m) => String -> m a -> m (Either SomeException a)
+supervise name f = do
+  p <- async f
+  mt <- liftIO $ do
+    v <- registerDelay (seconds 20)
+    atomically $ (Just <$> waitCatchSTM p) `orElse` checkTimeout v
+
+  case mt of
+    Nothing -> do
+      logErr $ "timed out waiting for supervised job " <> lstr name <> "... will continue waiting"
+      rv <- waitCatch p
+      logErr $ "supervised task " <> lstr name <> " finally finished"
+      pure rv
+    Just x -> pure x
+
+  where
+    checkTimeout :: TVar Bool -> STM (Maybe a)
+    checkTimeout v = do
+      v' <- readTVar v
+      unless v' retry
+      pure Nothing
 
 parseValue :: ValueParser -> BL.ByteString -> Either String LineField
 parseValue AutoVal v    = FieldFloat . toRealFloat <$> readEither (BC.unpack v)

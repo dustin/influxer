@@ -2,9 +2,9 @@
 
 module LogStuff where
 
-import           Data.List (intercalate)
-import           Control.Monad.Logger       (LogLevel (..), logWithoutLoc, LogStr, MonadLogger, ToLogStr(..))
-import           Network.MQTT.Topic         (Topic(..))
+import           Control.Monad.Logger (LogLevel (..), LogStr, MonadLogger, ToLogStr (..), logWithoutLoc)
+import           Data.List            (intercalate)
+import           Network.MQTT.Topic   (Topic (..))
 
 instance ToLogStr Topic where
   toLogStr = toLogStr . unTopic

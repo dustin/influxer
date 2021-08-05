@@ -6,17 +6,15 @@
 
 module Main where
 
-import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.STM     (STM, TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO,
-                                             newTVarIO, orElse, peekTQueue, readTVar, registerDelay, retry, swapTVar,
-                                             writeTQueue)
+import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
+                                             peekTQueue, swapTVar, writeTQueue)
 import           Control.Lens
-import           Control.Monad              (forever, unless)
+import           Control.Monad              (forever)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
-import           Control.Monad.IO.Unlift    (withRunInIO)
-import           Control.Monad.Logger       (LogLevel (..), LoggingT, MonadLogger, filterLogger,
-                                             runStderrLoggingT, toLogStr)
+import           Control.Monad.IO.Unlift    (MonadUnliftIO (..))
+import           Control.Monad.Logger       (LogLevel (..), LoggingT, MonadLogger, filterLogger, runStderrLoggingT,
+                                             toLogStr)
 import           Control.Monad.Reader       (ReaderT (..), ask, asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -34,15 +32,14 @@ import           Database.InfluxDB          (Field (..), InfluxException (..), K
 import           Database.InfluxDB.Line     (encodeLines)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
-                                             ProtocolLevel (..), QoS (..), Topic, connectURI,
-                                             mqttConfig, normalDisconnect, publishq, subscribe, svrProps,
-                                             waitForClient)
+                                             ProtocolLevel (..), QoS (..), Topic, connectURI, mqttConfig,
+                                             normalDisconnect, publishq, subscribe, svrProps, waitForClient)
 import           Network.MQTT.Topic         (unTopic)
 import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
-import           UnliftIO.Async             (async, link, mapConcurrently_, waitCatch, waitCatchSTM, withAsync)
+import           UnliftIO.Async             (async, link, mapConcurrently_, withAsync)
 import           UnliftIO.Timeout           (timeout)
 
 import           Influxer
@@ -83,34 +80,6 @@ data HandleContext = HandleContext {
   }
 
 type Influxer = ReaderT HandleContext (LoggingT IO)
-
-seconds :: Int -> Int
-seconds = (* 1000000)
-
-delaySeconds :: MonadIO m => Int -> m ()
-delaySeconds = liftIO . threadDelay . seconds
-
-supervise :: String -> Influxer a -> Influxer (Either SomeException a)
-supervise name f = do
-  p <- async f
-  mt <- liftIO $ do
-    v <- registerDelay (seconds 20)
-    atomically $ (Just <$> waitCatchSTM p) `orElse` checkTimeout v
-
-  case mt of
-    Nothing -> do
-      logErr $ "timed out waiting for supervised job " <> lstr name <> "... will continue waiting"
-      rv <- waitCatch p
-      logErr $ "supervised task " <> lstr name <> " finally finished"
-      pure rv
-    Just x -> pure x
-
-  where
-    checkTimeout :: TVar Bool -> STM (Maybe a)
-    checkTimeout v = do
-      v' <- readTVar v
-      unless v' retry
-      pure Nothing
 
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
