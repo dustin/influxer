@@ -15,8 +15,8 @@ import           Control.Monad              (forever, unless)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.IO.Unlift    (withRunInIO)
-import           Control.Monad.Logger       (LogLevel (..), LogStr, LoggingT, MonadLogger, ToLogStr, filterLogger,
-                                             logWithoutLoc, runStderrLoggingT, toLogStr)
+import           Control.Monad.Logger       (LogLevel (..), LoggingT, MonadLogger, filterLogger,
+                                             runStderrLoggingT, toLogStr)
 import           Control.Monad.Reader       (ReaderT (..), ask, asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -83,24 +83,6 @@ data HandleContext = HandleContext {
   }
 
 type Influxer = ReaderT HandleContext (LoggingT IO)
-
-instance ToLogStr Topic where
-  toLogStr = toLogStr . unTopic
-
-logAt :: (MonadLogger m, ToLogStr msg) => LogLevel -> msg -> m ()
-logAt = logWithoutLoc ""
-
-logErr :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logErr = logAt LevelError
-
-logInfo :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logInfo = logAt LevelInfo
-
-logDbg :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logDbg = logAt LevelDebug
-
-lstr :: Show a => a -> LogStr
-lstr = toLogStr . show
 
 seconds :: Int -> Int
 seconds = (* 1000000)
