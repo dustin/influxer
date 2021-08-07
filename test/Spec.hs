@@ -117,11 +117,6 @@ genSpaceyString c = do
   stuff <- replicateM (length spaces + 1) (Gen.element HH.glass)
   pure . fold $ zipWith (<>) stuff ("":spaces)
 
-propDedupSpace :: HH.Property
-propDedupSpace = HH.property $ do
-  ss <- HH.forAll (genSpaceyString ' ')
-  HH.assert (not (isInfixOf "  " (dedupSpace ss)))
-
 propDeLine :: HH.Property
 propDeLine = HH.property $ do
   ss <- HH.forAll (genSpaceyString '\n')
@@ -134,7 +129,6 @@ tests = [
   testCase "example conf" testParser,
   QC.testProperty "best match" propBestMatch,
   QC.testProperty "parseValue" propParseValue,
-  HH.testProperty "spaces are sufficiently eaten" propDedupSpace,
   HH.testProperty "newlines are sufficiently eaten" propDeLine
   ]
 
