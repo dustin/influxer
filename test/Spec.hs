@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Test.QuickCheck
+import           Test.QuickCheck            (Arbitrary (..), arbitrary, arbitraryBoundedEnum, suchThat)
+import qualified Test.QuickCheck            as QC
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           Test.Tasty.QuickCheck      as QC
+import qualified Test.Tasty.QuickCheck      as QC
 
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -54,28 +55,28 @@ data MatchInput = MatchInput Extractor Topic [Watch] deriving (Show, Eq)
 instance Arbitrary MatchInput where
   arbitrary = do
     MatchingTopic (t, fs) <- arbitrary
-    before <- listOf (notMatching t)
+    before <- QC.listOf (notMatching t)
     after <- arbitrary
-    watchfun <- infiniteListOf cons
+    watchfun <- QC.infiniteListOf cons
     let allWatches = zipWith3 id watchfun (before <> fs <> after) extractors
         want = head $ drop (length before) extractors
     pure $ MatchInput want t allWatches
 
       where
-        cons = oneof [Watch <$> arbitraryBoundedEnum, pure Match]
+        cons = QC.oneof [Watch <$> arbitraryBoundedEnum, pure Match]
         extractors = [ValEx AutoVal [] (FieldNum i) (FieldNum i) | i <- [0..]]
         notMatching t = arbitrary `suchThat` (not . (`match` t))
 
-  shrink (MatchInput a t xs) = MatchInput a t <$> shrinkList (const []) xs
+  shrink (MatchInput a t xs) = MatchInput a t <$> QC.shrinkList (const []) xs
 
-propBestMatch :: MatchInput -> Property
-propBestMatch (MatchInput e t ws) = bestMatch t ws === e
+propBestMatch :: MatchInput -> QC.Property
+propBestMatch (MatchInput e t ws) = bestMatch t ws QC.=== e
 
 data ParseInput = ParseInput String (Either String LineField) ValueParser BL.ByteString
   deriving (Eq, Show)
 
 instance Arbitrary ParseInput where
-  arbitrary = oneof [ autoCase, floatCase, intiCase, intfCase, stringCase, trueCase, falseCase, ignoreCase ]
+  arbitrary = QC.oneof [ autoCase, floatCase, intiCase, intfCase, stringCase, trueCase, falseCase, ignoreCase ]
     where
       autoCase = do
         v <- arbitrary
@@ -87,25 +88,25 @@ instance Arbitrary ParseInput where
         v <- arbitrary
         pure $ ParseInput "int(i)" (Right (FieldInt v)) IntVal (BC.pack . show $ v)
       intfCase = do
-        v <- choose (-100000, 100000)
+        v <- QC.choose (-100000, 100000)
         pure $ ParseInput "int(f)" (Right (FieldInt v)) IntVal (BC.pack . (<>".0") . show $ v)
       stringCase = do
-        str <- listOf (elements ['a'..'z'])
+        str <- QC.listOf (QC.elements ['a'..'z'])
         pure $ ParseInput "str" (Right (FieldString (T.pack str))) StringVal (BC.pack str)
       -- bool cases
       yeses = ["ON", "on", "true", "1"]
-      trueCase = ParseInput "bool(true)" (Right (FieldBool True)) BoolVal <$> elements yeses
+      trueCase = ParseInput "bool(true)" (Right (FieldBool True)) BoolVal <$> QC.elements yeses
       falseCase = ParseInput "bool(false)" (Right (FieldBool False)) BoolVal <$> (BC.pack <$> arbitrary) `suchThat` (`notElem` yeses)
       ignoreCase = pure $ ParseInput "ignore" (Left "ignored") IgnoreVal "whatever"
 
-propParseValue :: ParseInput -> Property
-propParseValue (ParseInput l f v b) = label l $ parseValue v b === f
+propParseValue :: ParseInput -> QC.Property
+propParseValue (ParseInput l f v b) = QC.label l $ parseValue v b QC.=== f
 
 tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
-  testProperty "best match" propBestMatch,
-  testProperty "parseValue" propParseValue
+  QC.testProperty "best match" propBestMatch,
+  QC.testProperty "parseValue" propParseValue
   ]
 
 main :: IO ()
