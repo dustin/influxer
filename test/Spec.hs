@@ -110,24 +110,32 @@ instance Arbitrary ParseInput where
 propParseValue :: ParseInput -> QC.Property
 propParseValue (ParseInput l f v b) = QC.label l $ parseValue v b QC.=== f
 
-genSpaceyString :: HH.Gen String
-genSpaceyString = do
+genSpaceyString :: Char -> HH.Gen String
+genSpaceyString c = do
   nums <- Gen.list (Range.linear 1 5) (Gen.int $ Range.linear 1 5)
-  let spaces = (`replicate` ' ') <$> nums
+  let spaces = (`replicate` c) <$> nums
   stuff <- replicateM (length spaces + 1) (Gen.element HH.glass)
   pure . fold $ zipWith (<>) stuff ("":spaces)
 
 propDedupSpace :: HH.Property
 propDedupSpace = HH.property $ do
-  ss <- HH.forAll genSpaceyString
+  ss <- HH.forAll (genSpaceyString ' ')
   HH.assert (not (isInfixOf "  " (dedupSpace ss)))
+
+propDeLine :: HH.Property
+propDeLine = HH.property $ do
+  ss <- HH.forAll (genSpaceyString '\n')
+  let dl = deLine ss
+  HH.assert (not (isInfixOf "  " dl))
+  HH.assert (not (elem '\n' dl))
 
 tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
   QC.testProperty "best match" propBestMatch,
   QC.testProperty "parseValue" propParseValue,
-  HH.testProperty "spaces are sufficiently eaten" propDedupSpace
+  HH.testProperty "spaces are sufficiently eaten" propDedupSpace,
+  HH.testProperty "newlines are sufficiently eaten" propDeLine
   ]
 
 main :: IO ()
