@@ -1,23 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import           Test.QuickCheck            (Arbitrary (..), arbitrary, arbitraryBoundedEnum, suchThat)
-import qualified Test.QuickCheck            as QC
-import           Test.Tasty
-import           Test.Tasty.HUnit
-import qualified Test.Tasty.QuickCheck      as QC
-
+import           Control.Monad              (replicateM)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
+import           Data.Foldable              (fold)
+import           Data.List                  (isInfixOf)
 import qualified Data.Text                  as T
 import           Database.InfluxDB          (Field (..), LineField)
+import qualified Hedgehog                   as HH
+import qualified Hedgehog.Corpus            as HH
+import qualified Hedgehog.Gen               as Gen
+import qualified Hedgehog.Range             as Range
 import           Network.MQTT.Arbitrary
 import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
 import           Network.MQTT.Topic
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Network.URI                (parseURI)
+import           Test.QuickCheck            (Arbitrary (..), arbitrary, arbitraryBoundedEnum, suchThat)
+import qualified Test.QuickCheck            as QC
+import           Test.Tasty
+import           Test.Tasty.HUnit
+import qualified Test.Tasty.Hedgehog        as HH
+import qualified Test.Tasty.QuickCheck      as QC
 
 import           Influxer
 import           InfluxerConf
+import           LogStuff
 
 testParser :: Assertion
 testParser = do
@@ -102,11 +110,24 @@ instance Arbitrary ParseInput where
 propParseValue :: ParseInput -> QC.Property
 propParseValue (ParseInput l f v b) = QC.label l $ parseValue v b QC.=== f
 
+genSpaceyString :: HH.Gen String
+genSpaceyString = do
+  nums <- Gen.list (Range.linear 1 5) (Gen.int $ Range.linear 1 5)
+  let spaces = (`replicate` ' ') <$> nums
+  stuff <- replicateM (length spaces + 1) (Gen.element HH.glass)
+  pure . fold $ zipWith (<>) stuff ("":spaces)
+
+propDedupSpace :: HH.Property
+propDedupSpace = HH.property $ do
+  ss <- HH.forAll genSpaceyString
+  HH.assert (not (isInfixOf "  " (dedupSpace ss)))
+
 tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
   QC.testProperty "best match" propBestMatch,
-  QC.testProperty "parseValue" propParseValue
+  QC.testProperty "parseValue" propParseValue,
+  HH.testProperty "spaces are sufficiently eaten" propDedupSpace
   ]
 
 main :: IO ()

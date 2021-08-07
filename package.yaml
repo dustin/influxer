@@ -74,3 +74,6 @@ tests:
     - tasty
     - tasty-hunit
     - tasty-quickcheck
+    - hedgehog
+    - tasty-hedgehog
+    - hedgehog-corpus
