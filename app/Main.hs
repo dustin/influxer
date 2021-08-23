@@ -27,8 +27,9 @@ import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, splitOn, unpack)
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
-import           Database.InfluxDB          (Field (..), InfluxException (..), Key, Line (..), LineField, WriteParams,
-                                             host, precision, scaleTo, server, writeByteString, writeParams)
+import           Database.InfluxDB          (Field (..), InfluxException (..), Key, Line (..), LineField, Measurement,
+                                             WriteParams, host, precision, retentionPolicy, scaleTo, server,
+                                             writeByteString, writeParams)
 import           Database.InfluxDB.Line     (encodeLines)
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
@@ -71,10 +72,12 @@ options = Options
   <*> option (maybeReader parseURI) (long "mqtt-uri" <> showDefault <> value (fromJust $ parseURI "mqtt://localhost/") <> help "mqtt broker URI")
   <*> strOption (long "mqtt-prefix" <> showDefault <> value "tmp/influxer" <> help "MQTT topic prefix")
 
+type Entry = (Maybe Text, Line UTCTime)
+
 data HandleContext = HandleContext {
   counter :: TVar Int
   , wp    :: WriteParams
-  , inq   :: TQueue (UTCTime, Line UTCTime)
+  , inq   :: TQueue (UTCTime, Entry)
   , spool :: Spool
   , opts  :: Options
   }
@@ -82,6 +85,9 @@ data HandleContext = HandleContext {
 type Influxer = ReaderT HandleContext (LoggingT IO)
 
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
+
+fk :: IsString k => Text -> k
+fk = fromString.unpack
 
 handle :: [Watch] -> (Influxer () -> IO ()) -> MQTTCB
 handle ws unl _ PublishRequest{..} = unl $ do
@@ -110,32 +116,37 @@ handle ws unl _ PublishRequest{..} = unl $ do
     plusplus :: Influxer ()
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
 
-    extract :: UTCTime -> Extractor -> Either String (Line UTCTime)
+    extract :: UTCTime -> Extractor -> Either String Entry
     extract _ IgnoreExtractor = Left "unexpected message"
 
     extract ts (ValEx vp tags fld mn) = case parseValue vp v of
                               Left x  -> Left x
-                              Right v' -> Right $ Line (fk . mname $ mn) (Map.fromList $ mvals <$> tags)
-                                          (Map.singleton (fk $ mname fld) v') (Just ts)
+                              Right v' -> let (retention, measurement) = mname mn in
+                                            Right (retention, Line measurement (Map.fromList $ mvals <$> tags)
+                                                              (Map.singleton (fk $ nname fld) v') (Just ts))
 
     extract ts (JSON (JSONPExtractor m tags pats)) = jsonate ts (mname m) (mvals <$> tags) pats =<< eitherDecode v
 
-    mname :: MeasurementNamer -> Text
-    mname (ConstName t') = t'
-    mname (FieldNum 0)   = txtt
-    mname (FieldNum x)   = splitOn "/" txtt !! (x - 1)
+    mname :: MeasurementNamer -> (Maybe Text, Measurement)
+    mname (MeasurementNamer x n) = (x, fk $ nname n)
 
-    mvals :: (Text, MeasurementNamer) -> (Key, Key)
-    mvals (a,m) = (fk a, fk . mname $ m)
+    nname :: Namer -> Text
+    nname (ConstName t') = t'
+    nname (FieldNum 0)   = txtt
+    nname (FieldNum x)   = splitOn "/" txtt !! (x - 1)
 
-    fk :: IsString k => Text -> k
-    fk = fromString.unpack
+    mvals :: (Text, Namer) -> (Key, Key)
+    mvals (a,m) = (fk a, fk . nname $ m)
 
     -- extract all the desired fields
-    jsonate :: UTCTime -> Text -> [(Key,Key)] -> [(Text,Text,ValueParser)] -> Value -> Either String (Line UTCTime)
-    jsonate ts m tags l ob = case mapMaybe j1 l of
-                          [] -> Left "I've got no values"
-                          vs -> Right $ Line (fk m) (Map.fromList tags) (Map.fromList vs) (Just ts)
+    jsonate :: UTCTime -> (Maybe Text, Measurement)
+            -> [(Key,Key)]
+            -> [(Text,Text,ValueParser)]
+            -> Value
+            -> Either String Entry
+    jsonate ts (ret, m) tags l ob = case mapMaybe j1 l of
+                                      [] -> Left "I've got no values"
+                                      vs -> Right (ret, Line m (Map.fromList tags) (Map.fromList vs) (Just ts))
       where
         j1 :: (Text,Text,ValueParser) -> Maybe (Key, LineField)
         j1 (tag, pstr, vp) = let (Right p) = JP.unescape pstr in
@@ -205,25 +216,27 @@ runInserter = ask >>= forever . go
   where
     go HandleContext{wp, inq, spool} = do
       todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
-      logInfo $ "Inserting a batch of " <> toLogStr (length todo)
-      tryBatch todo
+      mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]
 
         where
           ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
-          tryBatch todo = catch mightInsert failed
+          eachBatch (mk, todo) = do
+            logInfo $ "Inserting a batch of " <> toLogStr (length todo)
+            tryBatch mk todo
+          tryBatch mk todo = catch mightInsert failed
             where
 
               mightInsert = do
-                m <- timeout (seconds 30) (liftIO $ writeByteString wp (ls todo))
+                m <- timeout (seconds 30) (liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) (ls todo))
                 case m of
-                  Nothing -> insertSpoolMany spool todo "timed out"
+                  Nothing -> insertSpoolMany spool mk todo "timed out"
                   Just _  -> pure ()
 
               failed :: (MonadLogger m, MonadIO m) => InfluxException -> m ()
               failed ex = do
                 let errs = (deLine . show) ex
                 logErr $ "influxdb live error " <> toLogStr errs
-                insertSpoolMany spool todo errs
+                insertSpoolMany spool mk todo errs
 
 run :: Options -> IO ()
 run opts@Options{..} = do

@@ -12,6 +12,7 @@ import           Control.Monad.IO.Class  (MonadIO (..))
 import           Control.Monad.IO.Unlift (MonadUnliftIO)
 import           Control.Monad.Logger    (MonadLogger, logErrorN, logInfoN)
 import qualified Data.ByteString.Lazy    as BL
+import           Data.Text               (Text)
 import qualified Data.Text               as T
 import           Data.Time               (UTCTime, getCurrentTime)
 import           Database.InfluxDB       (InfluxException (..), Line (..), WriteParams, precision, scaleTo,
@@ -34,13 +35,14 @@ createStatement = mconcat ["create table if not exists spool (id integer primary
                            "ts timestamp,",
                            "last_attempt timestamp,",
                            "last_error text,",
+                           "retention text,",
                            "line blob)"]
 
 insertStatement :: Query
-insertStatement = "insert into spool (ts, last_attempt, last_error, line) values (?, ?, ?, ?)"
+insertStatement = "insert into spool (ts, last_attempt, last_error, retention, line) values (?, ?, ?, ?, ?)"
 
 retryStmt :: Query
-retryStmt = "select id, line from spool where last_attempt < datetime('now', '-1 minute') limit 100"
+retryStmt = "select id, retention, line from spool where last_attempt < datetime('now', '-1 minute') limit 100"
 
 reschedStmt :: Query
 reschedStmt = "update spool set last_attempt = ?, last_error = ? where id = ?"
@@ -90,13 +92,13 @@ runInserter wp conn = forever insertSome
       liftIO $ withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
       sleep 15000000 -- slow down processing when we're rescheduling.
 
-insertSpool :: MonadIO m => Spool -> UTCTime -> String -> Line UTCTime -> m ()
-insertSpool Spool{..} ts err l =
-  liftIO $ execute conn insertStatement (ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
+insertSpool :: MonadIO m => Spool -> UTCTime -> String -> Maybe Text -> Line UTCTime -> m ()
+insertSpool Spool{..} ts err r l =
+  liftIO $ execute conn insertStatement (ts, ts, err, r, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
 
-insertSpoolMany :: MonadIO m => Spool -> [(UTCTime, Line UTCTime)] -> String -> m ()
-insertSpoolMany Spool{..} stuff err =
-  liftIO $ executeMany conn insertStatement [(ts, ts, err, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
+insertSpoolMany :: MonadIO m => Spool -> Maybe Text -> [(UTCTime, Line UTCTime)] -> String -> m ()
+insertSpoolMany Spool{..} mk stuff err =
+  liftIO $ executeMany conn insertStatement [(ts, ts, err, mk, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
                                             | (ts, l) <- stuff]
 
 count :: MonadIO m => Spool -> m Int

@@ -8,6 +8,7 @@ module InfluxerConf (
   QOS(..),
   JSONPExtractor(..),
   ValueParser(..),
+  Namer(..),
   MeasurementNamer(..),
   parseConfFile) where
 
@@ -35,13 +36,15 @@ data Watch = Watch QOS Filter Extractor
            | Match Filter Extractor
            deriving (Show, Eq)
 
-type Tags = [(Text,MeasurementNamer)]
+type Tags = [(Text,Namer)]
 
-data Extractor = ValEx ValueParser Tags MeasurementNamer MeasurementNamer
+data Namer = ConstName Text | FieldNum Int deriving (Show, Eq)
+
+data MeasurementNamer = MeasurementNamer (Maybe Text) Namer deriving (Show, Eq)
+
+data Extractor = ValEx ValueParser Tags Namer MeasurementNamer
                | JSON JSONPExtractor
                | IgnoreExtractor deriving(Show, Eq)
-
-data MeasurementNamer = ConstName Text | FieldNum Int deriving (Show, Eq)
 
 data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValueParser)] deriving(Show, Eq)
 
@@ -76,13 +79,19 @@ parseValEx = symbp [("auto", AutoVal),
                     ("string", StringVal),
                     ("ignore", IgnoreVal)]
 
-parsemn :: Parser MeasurementNamer
-parsemn = (ConstName <$> lexeme qstr) <|> (FieldNum <$> lexeme ("$" >> L.decimal))
+parsenamer :: Parser Namer
+parsenamer = (ConstName <$> lexeme qstr) <|> (FieldNum <$> lexeme ("$" >> L.decimal))
+
+parsemnamer :: Parser MeasurementNamer
+parsemnamer = try qualified <|> notQualified
+  where
+    qualified = qstr <* "." >>= \r -> MeasurementNamer (Just r) <$> parsenamer
+    notQualified = MeasurementNamer <$> pure Nothing <*> parsenamer
 
 parseTags :: Parser Tags
 parseTags = option [] $ bt "[" "]" (tag `sepBy` lexeme ",")
   where
-    tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* lexeme "=" <*> parsemn
+    tag = (,) <$> (pack <$> lexeme (some (noneOf ['\n', ' ', '=']))) <* lexeme "=" <*> parsenamer
 
 parseWatch :: Parser Watch
 parseWatch = do
@@ -97,15 +106,15 @@ parseWatch = do
     w = lexeme "watch" *> (option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)])
     aFilter = qstr >>= maybe (fail "bad filter") pure . mkFilter
 
-    parseField :: Parser MeasurementNamer
-    parseField = option (ConstName "value") ("field=" *> parsemn)
+    parseField :: Parser Namer
+    parseField = option (ConstName "value") ("field=" *> parsenamer)
 
     parseMsr :: Parser MeasurementNamer
-    parseMsr = option (FieldNum 0) ("measurement=" *> parsemn)
+    parseMsr = option (MeasurementNamer Nothing (FieldNum 0)) ("measurement=" *> parsemnamer)
 
     jsonpWatch :: Parser JSONPExtractor
     jsonpWatch = bt "{" "}" parsePee
-      where parsePee = JSONPExtractor <$> (lexeme "measurement" *> parsemn) <*> parseTags <*> some parseX
+      where parsePee = JSONPExtractor <$> (lexeme "measurement" *> parsemnamer) <*> parseTags <*> some parseX
 
     parseX = (,,) <$> lexeme qstr <* lexeme "<-" <*> lexeme qstr <*> option AutoVal parseValEx
 

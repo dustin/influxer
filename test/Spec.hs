@@ -33,28 +33,37 @@ testParser = do
   let (Just u) = parseURI "mqtt://localhost/#influxerdev"
   assertEqual "" (InfluxerConf [Source u
                                 [Watch QOS2 "oro/+/tele/SENSOR"
-                                 (JSON (JSONPExtractor (FieldNum 1) [] [
+                                 (JSON (JSONPExtractor (MeasurementNamer Nothing (FieldNum 1)) [] [
                                            ("total","/ENERGY/Total",AutoVal),
                                            ("yesterday","/ENERGY/Yesterday",FloatVal),
                                            ("today","/ENERGY/Today",AutoVal),
                                            ("power","/ENERGY/Power",AutoVal),
                                            ("voltage","/ENERGY/Voltage",AutoVal),
                                            ("current","/ENERGY/Current",AutoVal)])),
-                                 Match "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value") (FieldNum 0)),
+                                 Match "sj/some/thing" (ValEx IgnoreVal [] (ConstName "value")
+                                                         (MeasurementNamer Nothing (FieldNum 0))),
                                  Watch QOS0 "oro/something" (ValEx IntVal [("tag1",ConstName "a"),
                                                                            ("tag2",FieldNum 2)]
                                                              (ConstName "aval")
-                                                             (ConstName "amess")),
+                                                             (MeasurementNamer Nothing (ConstName "amess"))),
+                                 Watch QOS0 "oro/s/blah" (ValEx IntVal [("tag1",ConstName "a"),
+                                                                        ("tag2",FieldNum 2)]
+                                                           (ConstName "aval")
+                                                           (MeasurementNamer (Just "short") (ConstName "amess"))),
                                  Watch QOS2 "oro/boo" (ValEx BoolVal [("tag1",ConstName "a")]
-                                                       (ConstName "value") (FieldNum 0)),
-                                 Match "oro/str" (ValEx StringVal [] (ConstName "value") (FieldNum 0)),
-                                 Watch QOS1 "sj/#" (ValEx AutoVal [] (ConstName "value") (FieldNum 0))]])
+                                                       (ConstName "value")
+                                                       (MeasurementNamer Nothing (FieldNum 0))),
+                                 Match "oro/str" (ValEx StringVal [] (ConstName "value")
+                                                   (MeasurementNamer Nothing ((FieldNum 0)))),
+                                 Watch QOS1 "sj/#" (ValEx AutoVal [] (ConstName "value")
+                                                                     (MeasurementNamer Nothing (FieldNum 0)))]])
     cfg
 
   let ss = foldMap subs srcs
       baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
   assertEqual "" [("oro/+/tele/SENSOR", baseOpts {_subQoS = QoS2}),
                   ("oro/something", baseOpts{_subQoS = QoS0}),
+                  ("oro/s/blah", baseOpts{_subQoS = QoS0}),
                   ("oro/boo", baseOpts{_subQoS = QoS2}),
                   ("sj/#", baseOpts {_subQoS = QoS1})] ss
 
@@ -72,7 +81,7 @@ instance Arbitrary MatchInput where
 
       where
         cons = QC.oneof [Watch <$> arbitraryBoundedEnum, pure Match]
-        extractors = [ValEx AutoVal [] (FieldNum i) (FieldNum i) | i <- [0..]]
+        extractors = [ValEx AutoVal [] (FieldNum i) (MeasurementNamer Nothing (FieldNum i)) | i <- [0..]]
         notMatching t = arbitrary `suchThat` (not . (`match` t))
 
   shrink (MatchInput a t xs) = MatchInput a t <$> QC.shrinkList (const []) xs
