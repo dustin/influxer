@@ -12,11 +12,13 @@ import           Control.Monad.IO.Class  (MonadIO (..))
 import           Control.Monad.IO.Unlift (MonadUnliftIO)
 import           Control.Monad.Logger    (MonadLogger, logErrorN, logInfoN)
 import qualified Data.ByteString.Lazy    as BL
+import qualified Data.Map.Strict         as Map
+import           Data.String             (IsString (..))
 import           Data.Text               (Text)
 import qualified Data.Text               as T
 import           Data.Time               (UTCTime, getCurrentTime)
-import           Database.InfluxDB       (InfluxException (..), Line (..), WriteParams, precision, scaleTo,
-                                          writeByteString)
+import           Database.InfluxDB       (InfluxException (..), Line (..), WriteParams, precision, retentionPolicy,
+                                          scaleTo, writeByteString)
 import           Database.InfluxDB.Line  (encodeLine)
 import           Database.SQLite.Simple  hiding (bind, close)
 import qualified Database.SQLite.Simple  as SQLite
@@ -74,9 +76,12 @@ runInserter wp conn = forever insertSome
   where
     insertSome :: (MonadLogger m, MonadIO m, MonadCatch m) => m ()
     insertSome = do
-      rows <- liftIO (query_ conn retryStmt :: IO [(Int,BL.ByteString)])
+      rows <- liftIO (query_ conn retryStmt :: IO [(Int,Maybe Text,BL.ByteString)])
+      mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r,[(i,l)]) | (i,r,l) <- rows]
+
+    eachBatch (mk, rows) = do
       catch (do
-                liftIO $ writeByteString wp . mconcat . map ((<>"\n") . snd) $ rows
+                liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) . foldMap ((<>"\n") . snd) $ rows
                 liftIO $ withTransaction conn $ executeMany conn removeStmt (map (Only . fst) rows)
                 unless (null rows) $ logInfoN $ "retry: processed backlog of " <> (T.pack . show $ length rows)
             ) (reschedule (map fst rows))
@@ -91,6 +96,9 @@ runInserter wp conn = forever insertSome
       ts <- liftIO getCurrentTime
       liftIO $ withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
       sleep 15000000 -- slow down processing when we're rescheduling.
+
+    fk :: IsString k => Text -> k
+    fk = fromString . T.unpack
 
 insertSpool :: MonadIO m => Spool -> UTCTime -> String -> Maybe Text -> Line UTCTime -> m ()
 insertSpool Spool{..} ts err r l =
