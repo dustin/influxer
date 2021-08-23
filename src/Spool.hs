@@ -78,17 +78,16 @@ runInserter wp conn = forever insertSome
     insertSome = do
       rows <- liftIO (query_ conn retryStmt :: IO [(Int,Maybe Text,BL.ByteString)])
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r,[(i,l)]) | (i,r,l) <- rows]
+      when (null rows) $ do
+        liftIO $ execute_ conn "pragma incremental_vacuum(100)"
+        sleep 60000000
 
-    eachBatch (mk, rows) = do
+    eachBatch (mk, rows) =
       catch (do
                 liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) . foldMap ((<>"\n") . snd) $ rows
                 liftIO $ withTransaction conn $ executeMany conn removeStmt (map (Only . fst) rows)
                 unless (null rows) $ logInfoN $ "retry: processed backlog of " <> (T.pack . show $ length rows)
             ) (reschedule (map fst rows))
-
-      when (null rows) $ do
-        liftIO $ execute_ conn "pragma incremental_vacuum(100)"
-        sleep 60000000
 
     reschedule :: (MonadLogger m, MonadIO m) => [Int] -> InfluxException -> m ()
     reschedule ids e = do
