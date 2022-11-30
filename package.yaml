@@ -24,7 +24,7 @@ dependencies:
 - hjsonpointer
 - aeson
 - bytestring
-- net-mqtt >= 0.8.0.1
+- net-mqtt >= 0.8.2
 - megaparsec
 - containers
 - network-uri

@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-18.6
+resolver: lts-20.2
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -38,9 +38,9 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps:
-- git: https://github.com/seagreen/hjsonpointer.git
-  commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
-- net-mqtt-0.8.0.2
+- git: https://github.com/dustin/hjsonpointer.git
+  commit: 54b261a0ac482ffddb3472036940a31f9bc8fe46
+- net-mqtt-0.8.2.4
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
