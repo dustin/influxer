@@ -221,7 +221,10 @@ runInserter = ask >>= forever . go
         where
           ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
           eachBatch (mk, todo) = do
-            logInfo $ "Inserting a batch of " <> toLogStr (length todo) <> maybe "" ((" r=" <>) . toLogStr) mk
+            let logfn = case todo of
+                          [_] -> logDbg
+                          _ -> logInfo
+            logfn $ "Inserting a batch of " <> toLogStr (length todo) <> maybe "" ((" r=" <>) . toLogStr) mk
             tryBatch mk todo
           tryBatch mk todo = catch mightInsert failed
             where
