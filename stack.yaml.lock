@@ -5,26 +5,26 @@
 
 packages:
 - completed:
-    commit: 54b261a0ac482ffddb3472036940a31f9bc8fe46
-    git: https://github.com/dustin/hjsonpointer.git
+    commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
+    git: https://github.com/seagreen/hjsonpointer.git
     name: hjsonpointer
     pantry-tree:
-      sha256: 39ea3a901e9ff83c309b4f73f382457a3790949e5522aa710688028c5490f331
+      sha256: f41f1ef41e8bde508a2b10aa6c2a910a65c87c5cfd01f23f4635a1c6ae3311d6
       size: 577
     version: 1.5.0
   original:
-    commit: 54b261a0ac482ffddb3472036940a31f9bc8fe46
-    git: https://github.com/dustin/hjsonpointer.git
+    commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
+    git: https://github.com/seagreen/hjsonpointer.git
 - completed:
-    hackage: net-mqtt-0.8.2.4@sha256:d971ef92622d1fb8b00ce365b9aab60e865dbdab4c6ee1b8c2086d754460375a,4099
+    hackage: net-mqtt-0.8.0.2@sha256:def2fa42d89763550c758a2b367e54d3b23f1f9202c6e0fff8798f04b92f5333,4146
     pantry-tree:
-      sha256: b28fe6cbbc1b5c37dae438854a38116487cd1c8b2b56c80c59ab9a7e51fee64f
-      size: 814
+      sha256: 839dcd69a478c4746b9f8739bc27243540efcf82a528739e0335081c7c50106a
+      size: 701
   original:
-    hackage: net-mqtt-0.8.2.4
+    hackage: net-mqtt-0.8.0.2
 snapshots:
 - completed:
-    sha256: fc39d8afc97531d53d87b10abdef593bce503c0c1e46c2e9a84ebcbc78bf8470
-    size: 648432
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/20/2.yaml
-  original: lts-20.2
+    sha256: 14ca51a9a597c32dd7804c10d079feea3d0ae40c5fbbb346cbd67b3ae49f6d01
+    size: 649598
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/20/17.yaml
+  original: lts-20.17

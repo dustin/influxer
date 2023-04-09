@@ -3,3 +3,5 @@
 .stack-work/
 influx.spool
 influxer.cabal
+.DS_Store
+.direnv
