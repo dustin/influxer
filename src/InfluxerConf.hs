@@ -86,7 +86,7 @@ parsemnamer :: Parser MeasurementNamer
 parsemnamer = try qualified <|> notQualified
   where
     qualified = qstr <* "." >>= \r -> MeasurementNamer (Just r) <$> parsenamer
-    notQualified = MeasurementNamer <$> pure Nothing <*> parsenamer
+    notQualified = MeasurementNamer Nothing <$> parsenamer
 
 parseTags :: Parser Tags
 parseTags = option [] $ bt "[" "]" (tag `sepBy` lexeme ",")
@@ -103,7 +103,7 @@ parseWatch = do
 
   where
     m = lexeme "match"
-    w = lexeme "watch" *> (option QOS2 $ symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)])
+    w = lexeme "watch" *> option QOS2 (symbp [("qos0", QOS0), ("qos1", QOS1), ("qos2", QOS2)])
     aFilter = qstr >>= maybe (fail "bad filter") pure . mkFilter
 
     parseField :: Parser Namer

@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE TypeApplications  #-}
 
 module Main where
 
@@ -157,7 +158,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
         jt FloatVal (Number x)  = Just $ FieldFloat . toRealFloat $ x
         jt AutoVal (Number x)   = Just $ FieldFloat . toRealFloat $ x
         jt AutoVal (Bool x)     = Just $ FieldBool x
-        jt IntVal (Number x)    = Just $ FieldInt . floor . toRealFloat $ x
+        jt IntVal (Number x)    = Just $ FieldInt . floor @Double . toRealFloat $ x
         jt BoolVal (Bool x)     = Just $ FieldBool x
         jt StringVal (String x) = Just $ FieldString x
         jt _ _                  = Nothing
@@ -223,7 +224,7 @@ runInserter = ask >>= forever . go
           eachBatch (mk, todo) = do
             let logfn = case todo of
                           [_] -> logDbg
-                          _ -> logInfo
+                          _   -> logInfo
             logfn $ "Inserting a batch of " <> toLogStr (length todo) <> maybe "" ((" r=" <>) . toLogStr) mk
             tryBatch mk todo
           tryBatch mk todo = catch mightInsert failed
