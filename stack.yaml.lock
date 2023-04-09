@@ -5,23 +5,16 @@
 
 packages:
 - completed:
-    commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
-    git: https://github.com/seagreen/hjsonpointer.git
+    commit: 3def4c51bebb43e1250eac894788eba3c7eb507f
+    git: https://github.com/dustin/hjsonpointer.git
     name: hjsonpointer
     pantry-tree:
-      sha256: f41f1ef41e8bde508a2b10aa6c2a910a65c87c5cfd01f23f4635a1c6ae3311d6
+      sha256: a59a3ac072c3d5f6115e3850b6a19e758de2826563f6b5cce895733a55919814
       size: 577
-    version: 1.5.0
+    version: 2.0.0
   original:
-    commit: 75ed0d049c33274a6cb4c36c8538d4bf2ef9c30e
-    git: https://github.com/seagreen/hjsonpointer.git
-- completed:
-    hackage: net-mqtt-0.8.0.2@sha256:def2fa42d89763550c758a2b367e54d3b23f1f9202c6e0fff8798f04b92f5333,4146
-    pantry-tree:
-      sha256: 839dcd69a478c4746b9f8739bc27243540efcf82a528739e0335081c7c50106a
-      size: 701
-  original:
-    hackage: net-mqtt-0.8.0.2
+    commit: 3def4c51bebb43e1250eac894788eba3c7eb507f
+    git: https://github.com/dustin/hjsonpointer.git
 snapshots:
 - completed:
     sha256: 14ca51a9a597c32dd7804c10d079feea3d0ae40c5fbbb346cbd67b3ae49f6d01
