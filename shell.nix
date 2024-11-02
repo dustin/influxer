@@ -10,6 +10,9 @@ mkShell {
     niv
     ghcid
     haskell-language-server
+    cabal-install
+    ghc
+    zlib
   ];
 
   shellHook = ''

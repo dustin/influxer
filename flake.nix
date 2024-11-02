@@ -1,6 +1,6 @@
 {
-  description = "GoPro";
-  nixConfig.bash-prompt = "\[gopro-dev\]$ ";
+  description = "Influxer";
+  nixConfig.bash-prompt = "\[influxer-dev\]$ ";
 
   inputs.flake-utils.url = "github:numtide/flake-utils";
 

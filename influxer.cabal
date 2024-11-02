@@ -1,0 +1,138 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 0fca25880890f9d98b0943313567264f7cf4755fa5d90f41455d885bc0f06fcc
+
+name:           influxer
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/dustin/influxer#readme>
+homepage:       https://github.com/dustin/influxer#readme
+bug-reports:    https://github.com/dustin/influxer/issues
+author:         Dustin Sallings
+maintainer:     dustin@spy.net
+copyright:      MIT
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/dustin/influxer
+
+library
+  exposed-modules:
+      Influxer
+      InfluxerConf
+      LogStuff
+      Spool
+  other-modules:
+      Paths_influxer
+  hs-source-dirs:
+      src
+  ghc-options: -Wall
+  build-depends:
+      aeson
+    , async
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , exceptions
+    , hjsonpointer
+    , influxdb
+    , lens
+    , megaparsec
+    , monad-logger
+    , mtl
+    , net-mqtt >=0.8.0.1
+    , network-uri
+    , optparse-applicative
+    , scientific
+    , sqlite-simple
+    , stm
+    , text
+    , time
+    , transformers
+    , unliftio
+    , unliftio-core
+  default-language: Haskell2010
+
+executable influxer
+  main-is: Main.hs
+  other-modules:
+      Paths_influxer
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , async
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , exceptions
+    , hjsonpointer
+    , influxdb
+    , influxer
+    , lens
+    , megaparsec
+    , monad-logger
+    , mtl
+    , net-mqtt >=0.8.0.1
+    , network-uri
+    , optparse-applicative
+    , scientific
+    , sqlite-simple
+    , stm
+    , text
+    , time
+    , transformers
+    , unliftio
+    , unliftio-core
+  default-language: Haskell2010
+
+test-suite influxer-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_influxer
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , aeson
+    , async
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , exceptions
+    , hedgehog
+    , hedgehog-corpus
+    , hjsonpointer
+    , influxdb
+    , influxer
+    , lens
+    , megaparsec
+    , monad-logger
+    , mtl
+    , net-mqtt >=0.8.0.1
+    , network-uri
+    , optparse-applicative
+    , scientific
+    , sqlite-simple
+    , stm
+    , tasty
+    , tasty-hedgehog
+    , tasty-hunit
+    , tasty-quickcheck
+    , text
+    , time
+    , transformers
+    , unliftio
+    , unliftio-core
+  default-language: Haskell2010

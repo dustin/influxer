@@ -1,0 +1,6 @@
+packages: ./
+
+source-repository-package
+  type: git
+  location: https://github.com/dustin/hjsonpointer.git
+  tag: 3def4c51bebb43e1250eac894788eba3c7eb507f
