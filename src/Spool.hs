@@ -1,4 +1,4 @@
-module Spool (Spool, newSpool, insertSpool, insertSpoolMany, closeSpool, count) where
+module Spool (Spool, newSpool, insertSpoolMany, closeSpool, count) where
 
 import           Cleff
 import           Control.Concurrent       (threadDelay)
@@ -91,10 +91,6 @@ runInserter wp conn = forever insertSome
 
     fk :: IsString k => Text -> k
     fk = fromString . T.unpack
-
-insertSpool :: IOE :> es => Spool -> UTCTime -> String -> Maybe Text -> Line UTCTime -> Eff es ()
-insertSpool Spool{..} ts err r l =
-  liftIO $ execute conn insertStatement (ts, ts, err, r, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
 
 insertSpoolMany :: IOE :> es => Spool -> Maybe Text -> [(UTCTime, Line UTCTime)] -> String -> Eff es ()
 insertSpoolMany Spool{..} mk stuff err =
