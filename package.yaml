@@ -42,6 +42,23 @@ dependencies:
 - exceptions
 - cleff
 
+default-extensions:
+  - OverloadedStrings
+  - RecordWildCards
+  - NamedFieldPuns
+  - UndecidableInstances
+  - GADTs
+  - KindSignatures
+  - LambdaCase
+  - BlockArguments
+  - TypeOperators
+  - RankNTypes
+  - FlexibleContexts
+  - DataKinds
+  - ConstraintKinds
+  - TypeApplications
+  - TupleSections
+
 library:
   source-dirs: src
   ghc-options:

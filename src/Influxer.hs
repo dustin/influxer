@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications  #-}
-
 module Influxer where
 
 import           Cleff
@@ -9,7 +6,6 @@ import           Control.Concurrent.Async   (waitCatchSTM)
 import           Control.Concurrent.STM     (STM, TVar, atomically, orElse, readTVar, registerDelay, retry)
 import           Control.Monad              (unless)
 import           Control.Monad.Catch        (SomeException)
-import           Control.Monad.Logger       (MonadLogger)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.Scientific            (toRealFloat)
@@ -19,6 +15,7 @@ import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptio
 import           Network.MQTT.Topic         (Filter, Topic, match)
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Text.Read                  (readEither)
+import Data.Text (Text)
 
 import           Async
 import           InfluxerConf
@@ -30,7 +27,7 @@ seconds = (* 1000000)
 delaySeconds :: MonadIO m => Int -> m ()
 delaySeconds = liftIO . threadDelay . seconds
 
-supervise :: (MonadUnliftIO m, MonadLogger m) => String -> m a -> m (Either SomeException a)
+supervise :: [IOE, LogFX] :>> es => Text -> Eff es a -> Eff es (Either SomeException a)
 supervise name f = do
   p <- async f
   mt <- liftIO $ do
@@ -39,9 +36,9 @@ supervise name f = do
 
   case mt of
     Nothing -> do
-      logErr $ "timed out waiting for supervised job " <> lstr name <> "... will continue waiting"
+      logErrorL ["timed out waiting for supervised job ", name, "... will continue waiting"]
       rv <- waitCatch p
-      logErr $ "supervised task " <> lstr name <> " finally finished"
+      logErrorL ["supervised task ",  name, " finally finished"]
       pure rv
     Just x -> pure x
 

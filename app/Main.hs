@@ -1,25 +1,15 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TupleSections     #-}
-{-# LANGUAGE TypeApplications  #-}
-
 module Main where
 
 import           Cleff
+import Cleff.Reader
 import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
                                              peekTQueue, swapTVar, writeTQueue)
 import           Control.Lens
 import           Control.Monad              (forever)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
-import           Control.Monad.Logger       (LogLevel (..), LoggingT, MonadLogger, filterLogger, runStderrLoggingT,
-                                             toLogStr)
-import           Control.Monad.Reader       (ReaderT (..), ask, asks, runReaderT)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
-import           Data.List                  (intercalate)
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
@@ -40,7 +30,8 @@ import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
-import qualified System.Timeout           as T
+import qualified System.Timeout           as Timeout
+import qualified Data.Text as T
 
 import           Async
 import           Influxer
@@ -82,20 +73,18 @@ data HandleContext = HandleContext {
   , opts  :: Options
   }
 
-type Influxer = ReaderT HandleContext (LoggingT IO)
-
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
 fk :: IsString k => Text -> k
 fk = fromString.unpack
 
-handle :: [Watch] -> (Influxer () -> IO ()) -> MQTTCB
+handle :: [IOE, LogFX, Reader HandleContext] :>> es => [Watch] -> (Eff es () -> IO ()) -> MQTTCB
 handle ws unl _ PublishRequest{..} = unl $ do
-  logDbg $ "Processing " <> lstr t <> " mid" <> lstr _pubPktID <> " " <> lstr _pubProps
-  x <- supervise ((unpack . unTopic) t) handle'
-  logDbg $ "Finished processing " <> lstr t <> " mid" <> lstr _pubPktID <> " with " <> lstr x
+  logDbgL ["Processing ", tshow t, " mid", tshow _pubPktID, " ", tshow _pubProps]
+  x <- supervise (unTopic t) handle'
+  logDbgL ["Finished processing ", unTopic t, " mid", tshow _pubPktID," with ", tshow x]
   case x of
-    Left e  -> logErr $ "error on supervised handler for " <> toLogStr t <> ": " <> lstr e
+    Left e  -> logErrorL ["error on supervised handler for ", unTopic t, ": ", tshow e]
     Right _ -> plusplus
 
   where
@@ -103,20 +92,17 @@ handle ws unl _ PublishRequest{..} = unl $ do
     t = fk txtt
     v = _pubBody
 
-    handle' :: Influxer ()
     handle' = do
       ts <- liftIO getCurrentTime
       case extract ts $ bestMatch t ws of
         Left "ignored" -> pure ()
-        Left x -> logErr $ "error on " <> toLogStr t <> " -> " <> lstr v <> ": "  <> toLogStr x
+        Left x -> logErrorL ["error on ", unTopic t, " -> ", tshow v, ": ", tshow x]
         Right l -> do
           q <- asks inq
           (liftIO . atomically) $ writeTQueue q (ts, l)
 
-    plusplus :: Influxer ()
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
 
-    extract :: UTCTime -> Extractor -> Either String Entry
     extract _ IgnoreExtractor = Left "unexpected message"
 
     extract ts (ValEx vp tags fld mn) = case parseValue vp v of
@@ -163,7 +149,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
         jt _ _                  = Nothing
 
 
-runWatcher :: Source -> Influxer ()
+runWatcher :: [IOE, LogFX, Reader HandleContext] :>> es => Source -> Eff es ()
 runWatcher src@(Source uri watchers) = do
   Options{..} <- asks opts
   mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle watchers unl,
@@ -173,10 +159,10 @@ runWatcher src@(Source uri watchers) = do
                                                                 PropRequestProblemInformation 1,
                                                                 PropRequestResponseInformation 1]} uri
   cprops <- liftIO $ svrProps mc
-  logInfo $ "Connected to " <> lstr uri <> ": " <> lstr cprops
+  logInfoL ["Connected to ", tshow uri, ": ", tshow cprops]
   let tosub = subs src
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
-  logInfo $ "Subscribed: " <> toLogStr (intercalate ", " . map (\((t,_),r) -> show t <> "@" <> s r) $ zip tosub subrv)
+  logInfo $ "Subscribed: " <> (T.intercalate ", " . map (\((t,_),r) -> tshow t <> "@" <> tshow (s r)) $ zip tosub subrv)
   cnt <- asks counter
   withAsync (periodicallyLog cnt) $ \_ -> liftIO $ waitForClient mc
 
@@ -186,14 +172,12 @@ runWatcher src@(Source uri watchers) = do
     periodicallyLog v = forever $ do
       delaySeconds 60
       v' <- liftIO . atomically $ swapTVar v 0
-      logInfo $ "Processed " <> lstr v' <> " messages from " <> lstr uri
+      logInfoL ["Processed ", tshow v', " messages from ", tshow uri]
 
-runReporter :: Influxer ()
+runReporter :: [IOE, LogFX, Reader HandleContext] :>> es => Eff es ()
 runReporter = forever $ do
   Options{optMQTTURL} <- asks opts
-  catch (bracket connto disco loop) (\e -> logErr $ mconcat ["connecting to ",
-                                                             lstr optMQTTURL, " - ",
-                                                             lstr (e :: SomeException)])
+  catch (bracket connto disco loop) (\e -> logErrorL ["connecting to ", tshow optMQTTURL, " - ", tshow (e :: SomeException)])
   delaySeconds 5
 
   where
@@ -210,12 +194,12 @@ runReporter = forever $ do
       Options{..} <- asks opts
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
-runInserter :: Influxer ()
+runInserter :: [IOE, LogFX, Reader HandleContext] :>> es => Eff es ()
 runInserter = ask >>= forever . go
 
   where
 
-    timeout n m = withRunInIO $ \r -> T.timeout n (r m)
+    timeout n m = withRunInIO $ \r -> Timeout.timeout n (r m)
 
     go HandleContext{wp, inq, spool} = do
       todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
@@ -227,9 +211,9 @@ runInserter = ask >>= forever . go
             let logfn = case todo of
                           [_] -> logDbg
                           _   -> logInfo
-            logfn $ "Inserting a batch of " <> toLogStr (length todo) <> maybe "" ((" r=" <>) . toLogStr) mk
+            logfn $ "Inserting a batch of " <> tshow (length todo) <> maybe "" ((" r=" <>) . tshow) mk
             tryBatch mk todo
-          tryBatch mk todo = catch mightInsert failed
+          tryBatch mk todo = catch @_ @InfluxException mightInsert failed
             where
 
               mightInsert = do
@@ -238,10 +222,9 @@ runInserter = ask >>= forever . go
                   Nothing -> insertSpoolMany spool mk todo "timed out"
                   Just _  -> pure ()
 
-              failed :: (MonadLogger m, MonadIO m) => InfluxException -> m ()
               failed ex = do
                 let errs = (deLine . show) ex
-                logErr $ "influxdb live error " <> toLogStr errs
+                logErr $ "influxdb live error " <> tshow errs
                 insertSpoolMany spool mk todo errs
 
 run :: Options -> IO ()
@@ -249,17 +232,14 @@ run opts@Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   counter <- newTVarIO 0
-  runStderrLoggingT . logfilt $ do
+  runIOE . runLogFX optVerbose $ do
     spool <- newSpool wp optSpoolFile
     tq <- liftIO newTQueueIO
     let hc = HandleContext counter wp tq spool opts
-    flip runReaderT hc $ do
+    runReader hc $ do
       async runInserter >>= link
       async runReporter >>= link
       mapConcurrently_ runWatcher srcs
-
-  where
-    logfilt = filterLogger (\_ -> flip (if optVerbose then (>=) else (>)) LevelDebug)
 
 main :: IO ()
 main = run =<< execParser opts

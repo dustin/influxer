@@ -1,27 +1,72 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module LogStuff where
 
-import           Control.Monad.Logger (LogLevel (..), LogStr, MonadLogger, ToLogStr (..), logWithoutLoc)
-import           Network.MQTT.Topic   (Topic (..))
+import           Cleff
+import           Cleff.Writer
+import           Control.Monad         (when)
+import           Control.Monad.Logger  (MonadLogger(..), Loc (..), LogLevel (..), LogLine, LogSource, LogStr, toLogStr, defaultLoc, fromLogStr)
+import qualified Data.ByteString.Char8 as C8
+import           Data.Foldable         (fold)
+import           Data.String           (fromString)
+import qualified Data.Text             as T
+import           System.IO             (stderr)
 
-instance ToLogStr Topic where
-  toLogStr = toLogStr . unTopic
 
-logAt :: (MonadLogger m, ToLogStr msg) => LogLevel -> msg -> m ()
-logAt = logWithoutLoc ""
+data LogFX :: Effect where
+  LogFX :: Loc -> LogSource -> LogLevel -> LogStr -> LogFX m ()
 
-logErr :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logErr = logAt LevelError
+makeEffect ''LogFX
 
-logInfo :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logInfo = logAt LevelInfo
+genericLog :: LogLevel -> LogFX :> es => T.Text -> Eff es ()
+genericLog lvl = logFX defaultLoc "" lvl . fromString . T.unpack
 
-logDbg :: (MonadLogger m, ToLogStr msg) => msg -> m ()
-logDbg = logAt LevelDebug
+logErr, logError, logInfo, logDbg :: LogFX :> es => T.Text -> Eff es ()
 
-lstr :: Show a => a -> LogStr
-lstr = toLogStr . show
+logErrorL, logInfoL, logDbgL :: (Foldable f, LogFX :> es) => f T.Text -> Eff es ()
 
+logErrorL = logError . fold
+logInfoL = logInfo . fold
+logDbgL = logDbg . fold
+
+logError = genericLog LevelError
+logErr = logError
+
+logInfo = genericLog LevelInfo
+
+logDbg = genericLog LevelDebug
+
+baseLogger :: LogLevel -> Loc -> LogSource -> LogLevel -> LogStr -> IO ()
+baseLogger minLvl _ _ lvl s = when (lvl >= minLvl) $ C8.hPutStrLn stderr (fromLogStr ls)
+  where
+    ls = prefix <> ": " <> s
+    prefix = case lvl of
+               LevelDebug   -> "D"
+               LevelInfo    -> "I"
+               LevelWarn    -> "W"
+               LevelError   -> "E"
+               LevelOther x -> fromString . T.unpack $ x
+
+
+runLogFX :: (IOE :> es) => Bool -> Eff (LogFX : es) a -> Eff es a
+runLogFX verbose = interpretIO \case
+  LogFX loc src lvl' msg -> liftIO $ baseLogger minLvl loc src lvl' msg
+  where minLvl = if verbose then LevelDebug else LevelInfo
+
+runNoLogFX :: Eff (LogFX : es) a -> Eff es a
+runNoLogFX = interpret \case
+  LogFX _ _ _ _ -> pure ()
+
+runLogWriter :: Eff (LogFX : es) a -> Eff es (a, [LogLine])
+runLogWriter = runWriter . reinterpret \case
+  LogFX a b c d -> tell [(a,b,c,d)]
+
+instance (LogFX :> es) => MonadLogger (Eff es) where
+  monadLoggerLog loc src lvl msg = send (LogFX loc src lvl (toLogStr msg))
+ 
 deLine :: String -> String
 deLine = unwords . words
+
+tshow :: Show a => a -> T.Text
+tshow = T.pack . show

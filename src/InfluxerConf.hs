@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module InfluxerConf (
   InfluxerConf(..),
   Source(..),

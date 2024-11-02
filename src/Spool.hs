@@ -1,7 +1,3 @@
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-
 module Spool (Spool, newSpool, insertSpool, insertSpoolMany, closeSpool, count) where
 
 import           Cleff
@@ -9,8 +5,6 @@ import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async)
 import           Control.Lens
 import           Control.Monad            (forever, unless, when)
-import           Control.Monad.Catch      (MonadCatch, catch)
-import           Control.Monad.Logger     (MonadLogger, logErrorN, logInfoN)
 import qualified Data.ByteString.Lazy     as BL
 import qualified Data.Map.Strict          as Map
 import           Data.String              (IsString (..))
@@ -22,6 +16,7 @@ import           Database.InfluxDB        (InfluxException (..), Line (..), Writ
 import           Database.InfluxDB.Line   (encodeLine)
 import           Database.SQLite.Simple   hiding (bind, close)
 import qualified Database.SQLite.Simple   as SQLite
+import           Control.Monad.Catch        (catch)
 
 import           Async
 import           LogStuff
@@ -55,7 +50,7 @@ removeStmt = "delete from spool where id = ?"
 countStmt :: Query
 countStmt = "select count(*) from spool"
 
-newSpool :: (MonadCatch m, MonadLogger m, MonadUnliftIO m) => WriteParams -> String -> m Spool
+newSpool :: [IOE, LogFX] :>> es => WriteParams -> String -> Eff es Spool
 newSpool wp fn = do
   conn <- liftIO $ open fn
   liftIO $ do
@@ -70,11 +65,10 @@ newSpool wp fn = do
 sleep :: MonadIO m => Int -> m ()
 sleep = liftIO . threadDelay
 
-runInserter :: (MonadCatch m, MonadLogger m, MonadIO m) => WriteParams -> Connection -> m ()
+runInserter :: forall es. [IOE, LogFX] :>> es => WriteParams -> Connection -> Eff es ()
 runInserter wp conn = forever insertSome
 
   where
-    insertSome :: (MonadLogger m, MonadIO m, MonadCatch m) => m ()
     insertSome = do
       rows <- liftIO (query_ conn retryStmt :: IO [(Int,Maybe Text,BL.ByteString)])
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r,[(i,l)]) | (i,r,l) <- rows]
@@ -83,15 +77,14 @@ runInserter wp conn = forever insertSome
         sleep 60000000
 
     eachBatch (mk, rows) =
-      catch (do
+        catch @_ @InfluxException (do
                 liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) . foldMap ((<>"\n") . snd) $ rows
                 liftIO $ withTransaction conn $ executeMany conn removeStmt (map (Only . fst) rows)
-                unless (null rows) $ logInfoN $ "retry: processed backlog of " <> (T.pack . show $ length rows)
+                unless (null rows) $ logInfo $ "retry: processed backlog of " <> (T.pack . show $ length rows)
             ) (reschedule (map fst rows))
 
-    reschedule :: (MonadLogger m, MonadIO m) => [Int] -> InfluxException -> m ()
     reschedule ids e = do
-      logErrorN $ "retry: retry batch insertion error: " <> (T.pack . deLine . show) e
+      logError $ "retry: retry batch insertion error: " <> (T.pack . deLine . show) e
       ts <- liftIO getCurrentTime
       liftIO $ withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
       sleep 15000000 -- slow down processing when we're rescheduling.
@@ -99,11 +92,11 @@ runInserter wp conn = forever insertSome
     fk :: IsString k => Text -> k
     fk = fromString . T.unpack
 
-insertSpool :: MonadIO m => Spool -> UTCTime -> String -> Maybe Text -> Line UTCTime -> m ()
+insertSpool :: IOE :> es => Spool -> UTCTime -> String -> Maybe Text -> Line UTCTime -> Eff es ()
 insertSpool Spool{..} ts err r l =
   liftIO $ execute conn insertStatement (ts, ts, err, r, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
 
-insertSpoolMany :: MonadIO m => Spool -> Maybe Text -> [(UTCTime, Line UTCTime)] -> String -> m ()
+insertSpoolMany :: IOE :> es => Spool -> Maybe Text -> [(UTCTime, Line UTCTime)] -> String -> Eff es ()
 insertSpoolMany Spool{..} mk stuff err =
   liftIO $ executeMany conn insertStatement [(ts, ts, err, mk, BL.toStrict . encodeLine (scaleTo (wp ^. precision)) $ l)
                                             | (ts, l) <- stuff]
