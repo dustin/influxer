@@ -4,26 +4,26 @@
 
 module Spool (Spool, newSpool, insertSpool, insertSpoolMany, closeSpool, count) where
 
-import           Control.Concurrent      (threadDelay)
+import           Cleff
+import           Control.Concurrent       (threadDelay)
+import           Control.Concurrent.Async (Async)
 import           Control.Lens
-import           Control.Monad           (forever, unless, when)
-import           Control.Monad.Catch     (MonadCatch, catch)
-import           Control.Monad.IO.Class  (MonadIO (..))
-import           Control.Monad.IO.Unlift (MonadUnliftIO)
-import           Control.Monad.Logger    (MonadLogger, logErrorN, logInfoN)
-import qualified Data.ByteString.Lazy    as BL
-import qualified Data.Map.Strict         as Map
-import           Data.String             (IsString (..))
-import           Data.Text               (Text)
-import qualified Data.Text               as T
-import           Data.Time               (UTCTime, getCurrentTime)
-import           Database.InfluxDB       (InfluxException (..), Line (..), WriteParams, precision, retentionPolicy,
-                                          scaleTo, writeByteString)
-import           Database.InfluxDB.Line  (encodeLine)
-import           Database.SQLite.Simple  hiding (bind, close)
-import qualified Database.SQLite.Simple  as SQLite
-import           UnliftIO.Async          (Async, async, cancel, link)
+import           Control.Monad            (forever, unless, when)
+import           Control.Monad.Catch      (MonadCatch, catch)
+import           Control.Monad.Logger     (MonadLogger, logErrorN, logInfoN)
+import qualified Data.ByteString.Lazy     as BL
+import qualified Data.Map.Strict          as Map
+import           Data.String              (IsString (..))
+import           Data.Text                (Text)
+import qualified Data.Text                as T
+import           Data.Time                (UTCTime, getCurrentTime)
+import           Database.InfluxDB        (InfluxException (..), Line (..), WriteParams, precision, retentionPolicy,
+                                           scaleTo, writeByteString)
+import           Database.InfluxDB.Line   (encodeLine)
+import           Database.SQLite.Simple   hiding (bind, close)
+import qualified Database.SQLite.Simple   as SQLite
 
+import           Async
 import           LogStuff
 
 data Spool = Spool {
@@ -112,4 +112,4 @@ count :: MonadIO m => Spool -> m Int
 count Spool{conn} = head . head <$> liftIO (query_ conn countStmt)
 
 closeSpool :: MonadIO m => Spool -> m ()
-closeSpool Spool{..} = cancel inserter >> liftIO (SQLite.close conn)
+closeSpool Spool{..} = liftIO(cancel inserter) >> liftIO (SQLite.close conn)

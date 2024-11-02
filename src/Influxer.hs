@@ -3,12 +3,12 @@
 
 module Influxer where
 
+import           Cleff
 import           Control.Concurrent         (threadDelay)
-import           Control.Concurrent.STM     (retry)
+import           Control.Concurrent.Async   (waitCatchSTM)
+import           Control.Concurrent.STM     (STM, TVar, atomically, orElse, readTVar, registerDelay, retry)
 import           Control.Monad              (unless)
 import           Control.Monad.Catch        (SomeException)
-import           Control.Monad.IO.Class     (MonadIO (..))
-import           Control.Monad.IO.Unlift    (MonadUnliftIO (..))
 import           Control.Monad.Logger       (MonadLogger)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -19,9 +19,8 @@ import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptio
 import           Network.MQTT.Topic         (Filter, Topic, match)
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Text.Read                  (readEither)
-import           UnliftIO                   (STM, TVar, async, atomically, orElse, readTVar, registerDelay, waitCatch,
-                                             waitCatchSTM)
 
+import           Async
 import           InfluxerConf
 import           LogStuff
 

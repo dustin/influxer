@@ -7,13 +7,12 @@
 
 module Main where
 
+import           Cleff
 import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
                                              peekTQueue, swapTVar, writeTQueue)
 import           Control.Lens
 import           Control.Monad              (forever)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
-import           Control.Monad.IO.Class     (MonadIO (..))
-import           Control.Monad.IO.Unlift    (MonadUnliftIO (..))
 import           Control.Monad.Logger       (LogLevel (..), LoggingT, MonadLogger, filterLogger, runStderrLoggingT,
                                              toLogStr)
 import           Control.Monad.Reader       (ReaderT (..), ask, asks, runReaderT)
@@ -41,9 +40,9 @@ import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
-import           UnliftIO.Async             (async, link, mapConcurrently_, withAsync)
-import           UnliftIO.Timeout           (timeout)
+import qualified System.Timeout           as T
 
+import           Async
 import           Influxer
 import           InfluxerConf
 import           LogStuff
@@ -215,6 +214,9 @@ runInserter :: Influxer ()
 runInserter = ask >>= forever . go
 
   where
+
+    timeout n m = withRunInIO $ \r -> T.timeout n (r m)
+
     go HandleContext{wp, inq, spool} = do
       todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]

@@ -38,10 +38,9 @@ dependencies:
 - stm
 - mtl
 - transformers
-- unliftio
-- unliftio-core
 - monad-logger
 - exceptions
+- cleff
 
 library:
   source-dirs: src
