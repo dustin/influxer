@@ -67,18 +67,18 @@ type Entry = (Maybe Text, Line UTCTime)
 
 data HandleContext = HandleContext {
   counter :: TVar Int
-  , wp    :: WriteParams
-  , inq   :: TQueue (UTCTime, Entry)
   , opts  :: Options
   }
 
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
+type OpQueue = TQueue (UTCTime, Entry)
+
 fk :: IsString k => Text -> k
 fk = fromString.unpack
 
-handle :: [IOE, LogFX, Reader HandleContext] :>> es => [Watch] -> (Eff es () -> IO ()) -> MQTTCB
-handle ws unl _ PublishRequest{..} = unl $ do
+handle :: [IOE, LogFX, Reader HandleContext] :>> es => OpQueue -> [Watch] -> (Eff es () -> IO ()) -> MQTTCB
+handle opq ws unl _ PublishRequest{..} = unl $ do
   logDbgL ["Processing ", tshow t, " mid", tshow _pubPktID, " ", tshow _pubProps]
   x <- supervise (unTopic t) handle'
   logDbgL ["Finished processing ", unTopic t, " mid", tshow _pubPktID," with ", tshow x]
@@ -96,9 +96,7 @@ handle ws unl _ PublishRequest{..} = unl $ do
       case extract ts $ bestMatch t ws of
         Left "ignored" -> pure ()
         Left x -> logErrorL ["error on ", unTopic t, " -> ", tshow v, ": ", tshow x]
-        Right l -> do
-          q <- asks inq
-          (liftIO . atomically) $ writeTQueue q (ts, l)
+        Right l -> (liftIO . atomically) $ writeTQueue opq (ts, l)
 
     plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
 
@@ -148,10 +146,10 @@ handle ws unl _ PublishRequest{..} = unl $ do
         jt _ _                  = Nothing
 
 
-runWatcher :: [IOE, LogFX, Reader HandleContext] :>> es => Source -> Eff es ()
-runWatcher src@(Source uri watchers) = do
+runWatcher :: [IOE, LogFX, Reader HandleContext] :>> es => OpQueue -> Source -> Eff es ()
+runWatcher opq src@(Source uri watchers) = do
   Options{..} <- asks opts
-  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle watchers unl,
+  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle opq watchers unl,
                                                     _protocol=optProtocol, _cleanSession=optClean,
                                                     _connProps=[PropSessionExpiryInterval 3600,
                                                                 PropTopicAliasMaximum 1024,
@@ -192,38 +190,34 @@ runReporter = forever $ do
       Options{..} <- asks opts
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
-runInserter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => Eff es ()
-runInserter = ask >>= forever . go
-
-  where
-
-    timeout n m = withRunInIO $ \r -> Timeout.timeout n (r m)
-
-    go HandleContext{wp, inq} = do
-      todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
+runInserter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => WriteParams -> OpQueue -> Eff es ()
+runInserter wp opq = forever do
+      todo <- (liftIO . atomically) (peekTQueue opq *> flushTQueue opq)
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]
 
-        where
-          ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
-          eachBatch (mk, todo) = do
-            let logfn = case todo of
-                          [_] -> logDbg
-                          _   -> logInfo
-            logfn $ "Inserting a batch of " <> tshow (length todo) <> maybe "" ((" r=" <>) . tshow) mk
-            tryBatch mk todo
-          tryBatch mk todo = catch @_ @InfluxException mightInsert failed
-            where
+    where
+        ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
+        eachBatch (mk, todo) = do
+          let logfn = case todo of
+                        [_] -> logDbg
+                        _   -> logInfo
+          logfn $ "Inserting a batch of " <> tshow (length todo) <> maybe "" ((" r=" <>) . tshow) mk
+          tryBatch mk todo
+        tryBatch mk todo = catch @_ @InfluxException mightInsert failed
+          where
 
-              mightInsert = do
-                m <- timeout (seconds 30) (liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) (ls todo))
-                case m of
-                  Nothing -> insertSpool mk todo "timed out"
-                  Just _  -> pure ()
+            mightInsert = do
+              m <- timeout (seconds 30) (liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) (ls todo))
+              case m of
+                Nothing -> insertSpool mk todo "timed out"
+                Just _  -> pure ()
 
-              failed ex = do
-                let errs = (deLine . show) ex
-                logErr $ "influxdb live error " <> tshow errs
-                insertSpool mk todo errs
+            failed ex = do
+              let errs = (deLine . show) ex
+              logErr $ "influxdb live error " <> tshow errs
+              insertSpool mk todo errs
+
+        timeout n m = withRunInIO $ \r -> Timeout.timeout n (r m)
 
 run :: Options -> IO ()
 run opts@Options{..} = do
@@ -232,11 +226,10 @@ run opts@Options{..} = do
   counter <- newTVarIO 0
   runIOE . runLogFX optVerbose . runNewSpool wp optSpoolFile $ do
     tq <- liftIO newTQueueIO
-    let hc = HandleContext counter wp tq opts
-    runReader hc $ do
-      async runInserter >>= link
+    runReader (HandleContext counter opts) do
+      async (runInserter wp tq) >>= link
       async runReporter >>= link
-      mapConcurrently_ runWatcher srcs
+      mapConcurrently_ (runWatcher tq) srcs
 
 main :: IO ()
 main = run =<< execParser opts
