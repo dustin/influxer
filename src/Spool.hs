@@ -117,4 +117,4 @@ runSpool sp = interpret \case
   CountSpool -> liftIO $ count sp
 
 runNewSpool :: [IOE, LogFX] :>> es => WriteParams -> String -> Eff (SpoolFX : es) a -> Eff es a
-runNewSpool wp fn a = bracket (newSpool wp fn) closeSpool (\sp -> runSpool sp a)
+runNewSpool wp fn a = bracket (newSpool wp fn) closeSpool (`runSpool` a)
