@@ -1,7 +1,7 @@
 module Main where
 
 import           Cleff
-import Cleff.Reader
+import           Cleff.Reader
 import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
                                              peekTQueue, swapTVar, writeTQueue)
 import           Control.Lens
@@ -15,6 +15,7 @@ import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
 import           Data.String                (IsString, fromString)
 import           Data.Text                  (Text, splitOn, unpack)
+import qualified Data.Text                  as T
 import qualified Data.Text.Encoding         as TE
 import           Data.Time                  (UTCTime, getCurrentTime)
 import           Database.InfluxDB          (Field (..), InfluxException (..), Key, Line (..), LineField, Measurement,
@@ -30,8 +31,7 @@ import           Network.MQTT.Types         (PublishRequest (..))
 import           Network.URI                (URI, parseURI)
 import           Options.Applicative        (Parser, execParser, flag, fullDesc, help, helper, info, long, maybeReader,
                                              option, progDesc, short, showDefault, strOption, switch, value, (<**>))
-import qualified System.Timeout           as Timeout
-import qualified Data.Text as T
+import qualified System.Timeout             as Timeout
 
 import           Async
 import           Influxer
@@ -69,7 +69,6 @@ data HandleContext = HandleContext {
   counter :: TVar Int
   , wp    :: WriteParams
   , inq   :: TQueue (UTCTime, Entry)
-  , spool :: Spool
   , opts  :: Options
   }
 
@@ -162,19 +161,19 @@ runWatcher src@(Source uri watchers) = do
   logInfoL ["Connected to ", tshow uri, ": ", tshow cprops]
   let tosub = subs src
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
-  logInfo $ "Subscribed: " <> (T.intercalate ", " . map (\((t,_),r) -> tshow t <> "@" <> tshow (s r)) $ zip tosub subrv)
+  logInfo $ "Subscribed: " <> (T.intercalate ", " . map (\((t,_),r) -> tshow t <> "@" <> s r) $ zip tosub subrv)
   cnt <- asks counter
   withAsync (periodicallyLog cnt) $ \_ -> liftIO $ waitForClient mc
 
   where
-    s = either show show
+    s = either tshow tshow
 
     periodicallyLog v = forever $ do
       delaySeconds 60
       v' <- liftIO . atomically $ swapTVar v 0
       logInfoL ["Processed ", tshow v', " messages from ", tshow uri]
 
-runReporter :: [IOE, LogFX, Reader HandleContext] :>> es => Eff es ()
+runReporter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => Eff es ()
 runReporter = forever $ do
   Options{optMQTTURL} <- asks opts
   catch (bracket connto disco loop) (\e -> logErrorL ["connecting to ", tshow optMQTTURL, " - ", tshow (e :: SomeException)])
@@ -189,19 +188,18 @@ runReporter = forever $ do
 
     loop mc = forever $ do
       delaySeconds 60
-      sp <- asks spool
-      c <- count sp
+      c <- countSpool
       Options{..} <- asks opts
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
-runInserter :: [IOE, LogFX, Reader HandleContext] :>> es => Eff es ()
+runInserter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => Eff es ()
 runInserter = ask >>= forever . go
 
   where
 
     timeout n m = withRunInIO $ \r -> Timeout.timeout n (r m)
 
-    go HandleContext{wp, inq, spool} = do
+    go HandleContext{wp, inq} = do
       todo <- (liftIO . atomically) (peekTQueue inq >> flushTQueue inq)
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]
 
@@ -219,23 +217,22 @@ runInserter = ask >>= forever . go
               mightInsert = do
                 m <- timeout (seconds 30) (liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) (ls todo))
                 case m of
-                  Nothing -> insertSpoolMany spool mk todo "timed out"
+                  Nothing -> insertSpool mk todo "timed out"
                   Just _  -> pure ()
 
               failed ex = do
                 let errs = (deLine . show) ex
                 logErr $ "influxdb live error " <> tshow errs
-                insertSpoolMany spool mk todo errs
+                insertSpool mk todo errs
 
 run :: Options -> IO ()
 run opts@Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   counter <- newTVarIO 0
-  runIOE . runLogFX optVerbose $ do
-    spool <- newSpool wp optSpoolFile
+  runIOE . runLogFX optVerbose . runNewSpool wp optSpoolFile $ do
     tq <- liftIO newTQueueIO
-    let hc = HandleContext counter wp tq spool opts
+    let hc = HandleContext counter wp tq opts
     runReader hc $ do
       async runInserter >>= link
       async runReporter >>= link

@@ -1,10 +1,13 @@
-module Spool (Spool, newSpool, insertSpoolMany, closeSpool, count) where
+{-# LANGUAGE TemplateHaskell #-}
+
+module Spool (SpoolFX(..), insertSpool, countSpool, runSpool, runNewSpool) where
 
 import           Cleff
 import           Control.Concurrent       (threadDelay)
 import           Control.Concurrent.Async (Async)
 import           Control.Lens
 import           Control.Monad            (forever, unless, when)
+import           Control.Monad.Catch      (bracket, catch)
 import qualified Data.ByteString.Lazy     as BL
 import qualified Data.Map.Strict          as Map
 import           Data.String              (IsString (..))
@@ -16,7 +19,6 @@ import           Database.InfluxDB        (InfluxException (..), Line (..), Writ
 import           Database.InfluxDB.Line   (encodeLine)
 import           Database.SQLite.Simple   hiding (bind, close)
 import qualified Database.SQLite.Simple   as SQLite
-import           Control.Monad.Catch        (catch)
 
 import           Async
 import           LogStuff
@@ -60,7 +62,7 @@ newSpool wp fn = do
   inserter <- async $ runInserter wp conn
   link inserter
 
-  pure $ Spool{..}
+  pure Spool{..}
 
 sleep :: MonadIO m => Int -> m ()
 sleep = liftIO . threadDelay
@@ -101,4 +103,18 @@ count :: MonadIO m => Spool -> m Int
 count Spool{conn} = head . head <$> liftIO (query_ conn countStmt)
 
 closeSpool :: MonadIO m => Spool -> m ()
-closeSpool Spool{..} = liftIO(cancel inserter) >> liftIO (SQLite.close conn)
+closeSpool Spool{..} = liftIO (cancel inserter *> SQLite.close conn)
+
+data SpoolFX :: Effect where
+  InsertSpool :: Maybe Text -> [(UTCTime, Line UTCTime)] -> String -> SpoolFX m ()
+  CountSpool :: SpoolFX m Int
+
+makeEffect ''SpoolFX
+
+runSpool :: [IOE, LogFX] :>> es => Spool -> Eff (SpoolFX : es) a -> Eff es a
+runSpool sp = interpret \case
+  InsertSpool mk l e -> insertSpoolMany sp mk l e
+  CountSpool -> liftIO $ count sp
+
+runNewSpool :: [IOE, LogFX] :>> es => WriteParams -> String -> Eff (SpoolFX : es) a -> Eff es a
+runNewSpool wp fn a = bracket (newSpool wp fn) closeSpool (\sp -> runSpool sp a)

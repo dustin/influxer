@@ -9,13 +9,13 @@ import           Control.Monad.Catch        (SomeException)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
 import           Data.Scientific            (toRealFloat)
+import           Data.Text                  (Text)
 import qualified Data.Text.Encoding         as TE
 import           Database.InfluxDB          (Field (..), LineField)
 import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
 import           Network.MQTT.Topic         (Filter, Topic, match)
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Text.Read                  (readEither)
-import Data.Text (Text)
 
 import           Async
 import           InfluxerConf

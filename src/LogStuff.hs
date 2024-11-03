@@ -6,7 +6,8 @@ module LogStuff where
 import           Cleff
 import           Cleff.Writer
 import           Control.Monad         (when)
-import           Control.Monad.Logger  (MonadLogger(..), Loc (..), LogLevel (..), LogLine, LogSource, LogStr, toLogStr, defaultLoc, fromLogStr)
+import           Control.Monad.Logger  (Loc (..), LogLevel (..), LogLine, LogSource, LogStr, MonadLogger (..),
+                                        defaultLoc, fromLogStr, toLogStr)
 import qualified Data.ByteString.Char8 as C8
 import           Data.Foldable         (fold)
 import           Data.String           (fromString)
@@ -64,7 +65,7 @@ runLogWriter = runWriter . reinterpret \case
 
 instance (LogFX :> es) => MonadLogger (Eff es) where
   monadLoggerLog loc src lvl msg = send (LogFX loc src lvl (toLogStr msg))
- 
+
 deLine :: String -> String
 deLine = unwords . words
 
