@@ -17,7 +17,7 @@ packages:
     git: https://github.com/dustin/hjsonpointer.git
 snapshots:
 - completed:
-    sha256: 4a0e5e187fbef423f9c60072bfb1dd56f2a01a07a2667eb1469bd79073cfceaf
-    size: 713340
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/20.yaml
-  original: lts-22.20
+    sha256: 1e32b51d9082fdf6f3bd92accc9dfffd4ddaf406404427fb10bf76d2bc03cbbb
+    size: 720263
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/41.yaml
+  original: lts-22.41
