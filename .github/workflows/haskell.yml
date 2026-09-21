@@ -36,7 +36,7 @@ jobs:
         cp $HOME/.local/bin/influxer dist
 
     - name: Store Artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: influxer-ubuntu-latest
         path: dist
