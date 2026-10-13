@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
   schedule:
   - cron: "3 11 13,27 * *"
 jobs:
@@ -13,8 +16,10 @@ jobs:
     - uses: cachix/install-nix-action@v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          experimental-features = nix-command flakes
     - uses: cachix/cachix-action@v16
       with:
         name: dustin
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
-    - run: nix-build -A influxer.components.exes.influxer
+    - run: nix build .#default
