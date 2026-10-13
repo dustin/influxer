@@ -1,7 +1,5 @@
 module Main where
 
-import           Cleff
-import           Cleff.Reader
 import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
                                              peekTQueue, swapTVar, writeTQueue)
 import           Control.Lens
@@ -22,6 +20,8 @@ import           Database.InfluxDB          (Field (..), InfluxException (..), K
                                              WriteParams, host, precision, retentionPolicy, scaleTo, server,
                                              writeByteString, writeParams)
 import           Database.InfluxDB.Line     (encodeLines)
+import           Effectful
+import           Effectful.Reader.Static
 import qualified JSONPointer                as JP
 import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
                                              ProtocolLevel (..), QoS (..), Topic, connectURI, mqttConfig,
@@ -77,7 +77,7 @@ type OpQueue = TQueue (UTCTime, Entry)
 fk :: IsString k => Text -> k
 fk = fromString.unpack
 
-handle :: [IOE, LogFX, Reader HandleContext] :>> es => OpQueue -> [Watch] -> (Eff es () -> IO ()) -> MQTTCB
+handle :: (IOE :> es, LogFX :> es, Reader HandleContext :> es) => OpQueue -> [Watch] -> (Eff es () -> IO ()) -> MQTTCB
 handle opq ws unl _ PublishRequest{..} = unl $ do
   logDbgL ["Processing ", tshow t, " mid", tshow _pubPktID, " ", tshow _pubProps]
   x <- supervise (unTopic t) handle'
@@ -146,7 +146,7 @@ handle opq ws unl _ PublishRequest{..} = unl $ do
         jt _ _                  = Nothing
 
 
-runWatcher :: [IOE, LogFX, Reader HandleContext] :>> es => OpQueue -> Source -> Eff es ()
+runWatcher :: (IOE :> es, LogFX :> es, Reader HandleContext :> es) => OpQueue -> Source -> Eff es ()
 runWatcher opq src@(Source uri watchers) = do
   Options{..} <- asks opts
   mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle opq watchers unl,
@@ -171,7 +171,7 @@ runWatcher opq src@(Source uri watchers) = do
       v' <- liftIO . atomically $ swapTVar v 0
       logInfoL ["Processed ", tshow v', " messages from ", tshow uri]
 
-runReporter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => Eff es ()
+runReporter :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader HandleContext :> es) => Eff es ()
 runReporter = forever $ do
   Options{optMQTTURL} <- asks opts
   catch (bracket connto disco loop) (\e -> logErrorL ["connecting to ", tshow optMQTTURL, " - ", tshow (e :: SomeException)])
@@ -190,7 +190,7 @@ runReporter = forever $ do
       Options{..} <- asks opts
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
-runInserter :: [IOE, LogFX, SpoolFX, Reader HandleContext] :>> es => WriteParams -> OpQueue -> Eff es ()
+runInserter :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader HandleContext :> es) => WriteParams -> OpQueue -> Eff es ()
 runInserter wp opq = forever do
       todo <- (liftIO . atomically) (peekTQueue opq *> flushTQueue opq)
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]
@@ -224,7 +224,8 @@ run opts@Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
   counter <- newTVarIO 0
-  runIOE . runLogFX optVerbose . runNewSpool wp optSpoolFile $ do
+  -- MQTT callbacks and async workers run Eff actions from other threads.
+  runEff . withUnliftStrategy (ConcUnlift Persistent Unlimited) . runLogFX optVerbose . runNewSpool wp optSpoolFile $ do
     tq <- liftIO newTQueueIO
     runReader (HandleContext counter opts) do
       async (runInserter wp tq) >>= link

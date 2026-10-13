@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.37.0.
+-- This file has been generated from package.yaml by hpack version 0.38.3.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 791a08f20cbb7a37f8c7dfe637ae276ecd614006b177eadb25e89c2f100ea359
+-- hash: e9ff2ed0f74f1597dc2d2ac6059f8f1169a28269de01e445c01815aa07e51546
 
 name:           influxer
 version:        0.1.0.0
@@ -57,8 +57,9 @@ library
     , async
     , base >=4.7 && <5
     , bytestring
-    , cleff
     , containers
+    , effectful-core
+    , effectful-th
     , exceptions
     , hjsonpointer
     , influxdb
@@ -105,8 +106,9 @@ executable influxer
     , async
     , base >=4.7 && <5
     , bytestring
-    , cleff
     , containers
+    , effectful-core
+    , effectful-th
     , exceptions
     , hjsonpointer
     , influxdb
@@ -156,8 +158,9 @@ test-suite influxer-test
     , async
     , base >=4.7 && <5
     , bytestring
-    , cleff
     , containers
+    , effectful-core
+    , effectful-th
     , exceptions
     , hedgehog
     , hedgehog-corpus

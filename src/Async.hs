@@ -1,8 +1,8 @@
 module Async (async, link, cancel, withAsync, mapConcurrently_, waitCatch) where
 
-import           Cleff
 import qualified Control.Concurrent.Async as A
 import           Control.Exception        (SomeException)
+import           Effectful
 
 async :: MonadUnliftIO m => m a -> m (A.Async a)
 async m = withRunInIO $ \run -> A.async $ run m
