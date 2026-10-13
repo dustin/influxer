@@ -1,24 +1,28 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Spool (SpoolFX(..), insertSpool, countSpool, runSpool, runNewSpool) where
 
-import           Cleff
-import           Control.Concurrent       (threadDelay)
-import           Control.Concurrent.Async (Async)
+import           Control.Concurrent         (threadDelay)
+import           Control.Concurrent.Async   (Async)
 import           Control.Lens
-import           Control.Monad            (forever, unless, when)
-import           Control.Monad.Catch      (bracket, catch)
-import qualified Data.ByteString.Lazy     as BL
-import qualified Data.Map.Strict          as Map
-import           Data.String              (IsString (..))
-import           Data.Text                (Text)
-import qualified Data.Text                as T
-import           Data.Time                (UTCTime, getCurrentTime)
-import           Database.InfluxDB        (InfluxException (..), Line (..), WriteParams, precision, retentionPolicy,
-                                           scaleTo, writeByteString)
-import           Database.InfluxDB.Line   (encodeLine)
-import           Database.SQLite.Simple   hiding (bind, close)
-import qualified Database.SQLite.Simple   as SQLite
+import           Control.Monad              (forever, unless, when)
+import           Control.Monad.Catch        (bracket, catch)
+import qualified Data.ByteString.Lazy       as BL
+import qualified Data.Map.Strict            as Map
+import           Data.String                (IsString (..))
+import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import           Data.Time                  (UTCTime, getCurrentTime)
+import           Database.InfluxDB          (InfluxException (..), Line (..), WriteParams, precision, retentionPolicy,
+                                             scaleTo, writeByteString)
+import           Database.InfluxDB.Line     (encodeLine)
+import           Database.SQLite.Simple     hiding (bind, close)
+import qualified Database.SQLite.Simple     as SQLite
+import           Effectful
+import           Effectful.Dispatch.Dynamic (interpret)
+import           Effectful.TH
 
 import           Async
 import           LogStuff
@@ -52,7 +56,7 @@ removeStmt = "delete from spool where id = ?"
 countStmt :: Query
 countStmt = "select count(*) from spool"
 
-newSpool :: [IOE, LogFX] :>> es => WriteParams -> String -> Eff es Spool
+newSpool :: (IOE :> es, LogFX :> es) => WriteParams -> String -> Eff es Spool
 newSpool wp fn = do
   conn <- liftIO $ open fn
   liftIO $ do
@@ -67,7 +71,7 @@ newSpool wp fn = do
 sleep :: MonadIO m => Int -> m ()
 sleep = liftIO . threadDelay
 
-runInserter :: forall es. [IOE, LogFX] :>> es => WriteParams -> Connection -> Eff es ()
+runInserter :: forall es. (IOE :> es, LogFX :> es) => WriteParams -> Connection -> Eff es ()
 runInserter wp conn = forever insertSome
 
   where
@@ -111,10 +115,10 @@ data SpoolFX :: Effect where
 
 makeEffect ''SpoolFX
 
-runSpool :: [IOE, LogFX] :>> es => Spool -> Eff (SpoolFX : es) a -> Eff es a
-runSpool sp = interpret \case
+runSpool :: (IOE :> es, LogFX :> es) => Spool -> Eff (SpoolFX : es) a -> Eff es a
+runSpool sp = interpret \_ -> \case
   InsertSpool mk l e -> insertSpoolMany sp mk l e
   CountSpool -> liftIO $ count sp
 
-runNewSpool :: [IOE, LogFX] :>> es => WriteParams -> String -> Eff (SpoolFX : es) a -> Eff es a
+runNewSpool :: (IOE :> es, LogFX :> es) => WriteParams -> String -> Eff (SpoolFX : es) a -> Eff es a
 runNewSpool wp fn a = bracket (newSpool wp fn) closeSpool (`runSpool` a)

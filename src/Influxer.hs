@@ -1,6 +1,5 @@
 module Influxer where
 
-import           Cleff
 import           Control.Concurrent         (threadDelay)
 import           Control.Concurrent.Async   (waitCatchSTM)
 import           Control.Concurrent.STM     (STM, TVar, atomically, orElse, readTVar, registerDelay, retry)
@@ -12,6 +11,7 @@ import           Data.Scientific            (toRealFloat)
 import           Data.Text                  (Text)
 import qualified Data.Text.Encoding         as TE
 import           Database.InfluxDB          (Field (..), LineField)
+import           Effectful
 import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
 import           Network.MQTT.Topic         (Filter, Topic, match)
 import           Network.MQTT.Types         (RetainHandling (..))
@@ -27,7 +27,7 @@ seconds = (* 1000000)
 delaySeconds :: MonadIO m => Int -> m ()
 delaySeconds = liftIO . threadDelay . seconds
 
-supervise :: [IOE, LogFX] :>> es => Text -> Eff es a -> Eff es (Either SomeException a)
+supervise :: (IOE :> es, LogFX :> es) => Text -> Eff es a -> Eff es (Either SomeException a)
 supervise name f = do
   p <- async f
   mt <- liftIO $ do
