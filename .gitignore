@@ -1,7 +1,8 @@
 *.conf
 *~
-.stack-work/
 influx.spool
 .DS_Store
 .direnv
 dist-newstyle/
+flake-profile*
+cabal.project.freeze
