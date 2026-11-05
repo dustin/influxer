@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e9ff2ed0f74f1597dc2d2ac6059f8f1169a28269de01e445c01815aa07e51546
+-- hash: fd0133c7249f25a8375e1ad844ac198ee0729be6e5e2e947856b63ce58f6c99d
 
 name:           influxer
 version:        0.1.0.0
@@ -67,7 +67,7 @@ library
     , megaparsec
     , monad-logger
     , mtl
-    , net-mqtt >=0.8.0.1
+    , net-mqtt >=0.8.8.0
     , network-uri
     , optparse-applicative
     , scientific
@@ -117,7 +117,7 @@ executable influxer
     , megaparsec
     , monad-logger
     , mtl
-    , net-mqtt >=0.8.0.1
+    , net-mqtt >=0.8.8.0
     , network-uri
     , optparse-applicative
     , scientific
@@ -171,7 +171,7 @@ test-suite influxer-test
     , megaparsec
     , monad-logger
     , mtl
-    , net-mqtt >=0.8.0.1
+    , net-mqtt >=0.8.8.0
     , network-uri
     , optparse-applicative
     , scientific
