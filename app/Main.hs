@@ -1,13 +1,14 @@
 module Main where
 
-import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar, newTQueueIO, newTVarIO,
-                                             peekTQueue, swapTVar, writeTQueue)
+import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQueue, modifyTVar', newTQueueIO, newTVarIO,
+                                             peekTQueue, readTVar, swapTVar, writeTQueue)
 import           Control.Lens
 import           Control.Monad              (forever)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
+import           Data.Foldable              (for_)
 import qualified Data.Map.Strict            as Map
 import           Data.Maybe                 (fromJust, mapMaybe)
 import           Data.Scientific            (toRealFloat)
@@ -23,8 +24,8 @@ import           Database.InfluxDB.Line     (encodeLines)
 import           Effectful
 import           Effectful.Reader.Static
 import qualified JSONPointer                as JP
-import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MessageCallback (..), Property (..),
-                                             ProtocolLevel (..), QoS (..), Topic, connectURI, mqttConfig,
+import           Network.MQTT.Client        (MQTTClient, MQTTConfig (..), MQTTException, MessageCallback (..),
+                                             Property (..), ProtocolLevel (..), QoS (..), Topic, connectURI, mqttConfig,
                                              normalDisconnect, publishq, subscribe, svrProps, waitForClient)
 import           Network.MQTT.Topic         (unTopic)
 import           Network.MQTT.Types         (PublishRequest (..))
@@ -65,11 +66,6 @@ options = Options
 
 type Entry = (Maybe Text, Line UTCTime)
 
-data HandleContext = HandleContext {
-  counter :: TVar Int
-  , opts  :: Options
-  }
-
 type MQTTCB = MQTTClient -> PublishRequest -> IO ()
 
 type OpQueue = TQueue (UTCTime, Entry)
@@ -77,8 +73,8 @@ type OpQueue = TQueue (UTCTime, Entry)
 fk :: IsString k => Text -> k
 fk = fromString.unpack
 
-handle :: (IOE :> es, LogFX :> es, Reader HandleContext :> es) => OpQueue -> [Watch] -> (Eff es () -> IO ()) -> MQTTCB
-handle opq ws unl _ PublishRequest{..} = unl $ do
+handle :: (IOE :> es, LogFX :> es) => OpQueue -> TVar Int -> [Watch] -> (Eff es () -> IO ()) -> MQTTCB
+handle opq counter ws unl _ PublishRequest{..} = unl $ do
   logDbgL ["Processing ", tshow t, " mid", tshow _pubPktID, " ", tshow _pubProps]
   x <- supervise (unTopic t) handle'
   logDbgL ["Finished processing ", unTopic t, " mid", tshow _pubPktID," with ", tshow x]
@@ -98,7 +94,7 @@ handle opq ws unl _ PublishRequest{..} = unl $ do
         Left x -> logErrorL ["error on ", unTopic t, " -> ", tshow v, ": ", tshow x]
         Right l -> (liftIO . atomically) $ writeTQueue opq (ts, l)
 
-    plusplus = asks counter >>= \tv -> liftIO . atomically $ modifyTVar tv succ
+    plusplus = liftIO . atomically $ modifyTVar' counter succ
 
     extract _ IgnoreExtractor = Left "unexpected message"
 
@@ -146,10 +142,23 @@ handle opq ws unl _ PublishRequest{..} = unl $ do
         jt _ _                  = Nothing
 
 
-runWatcher :: (IOE :> es, LogFX :> es, Reader HandleContext :> es) => OpQueue -> Source -> Eff es ()
-runWatcher opq src@(Source uri watchers) = do
-  Options{..} <- asks opts
-  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle opq watchers unl,
+-- | Publish a stat.  These are advisory, so losing one isn't worth disturbing anything else.
+--
+-- QoS0 keeps a stalled broker from holding up the inserter while it waits for an ack.
+publishStat :: (IOE :> es, LogFX :> es) => MQTTClient -> Topic -> Int -> Eff es ()
+publishStat mc t v = catch @_ @MQTTException publish failed
+  where
+    publish = liftIO $ publishq mc t (BC.pack $ show v) True QoS0 [PropMessageExpiryInterval 120]
+    failed e = logErrorL ["publishing stat to ", unTopic t, ": ", tshow e]
+
+runWatcher :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader Options :> es) => WriteParams -> Source -> Eff es ()
+runWatcher wp src@(Source uri stats watchers) = do
+  Options{..} <- ask
+  -- Each source gets its own queue and counter so stats can be attributed to it.
+  opq <- liftIO newTQueueIO
+  cnt <- liftIO $ newTVarIO 0
+  prevCnt <- liftIO $ newTVarIO 0
+  mc <- withRunInIO $ \unl -> connectURI mqttConfig{_msgCB=LowLevelCallback $ handle opq cnt watchers unl,
                                                     _protocol=optProtocol, _cleanSession=optClean,
                                                     _connProps=[PropSessionExpiryInterval 3600,
                                                                 PropTopicAliasMaximum 1024,
@@ -160,26 +169,34 @@ runWatcher opq src@(Source uri watchers) = do
   let tosub = subs src
   (subrv,_) <- liftIO $ subscribe mc tosub mempty
   logInfo $ "Subscribed: " <> (T.intercalate ", " . map (\((t,_),r) -> tshow t <> "@" <> s r) $ zip tosub subrv)
-  cnt <- asks counter
-  withAsync (periodicallyLog cnt) $ \_ -> liftIO $ waitForClient mc
+  async (runInserter wp opq (reportBatch mc)) >>= link
+  withAsync (periodicallyReport mc cnt prevCnt) $ \_ -> liftIO $ waitForClient mc
 
   where
     s = either tshow tshow
 
-    periodicallyLog v = forever $ do
+    periodicallyReport mc v pv = forever $ do
       delaySeconds 60
-      v' <- liftIO . atomically $ swapTVar v 0
-      logInfoL ["Processed ", tshow v', " messages from ", tshow uri]
+      (v', pv') <- liftIO . atomically $ do
+        v' <- readTVar v
+        pv' <- swapTVar pv v'
+        pure (v', pv')
+      logDbgL ["Processed ", tshow (v' - pv'), " messages from ", tshow uri]
+      for_ stats $ \prefix -> publishStat mc (processedTopic prefix) v'
 
-runReporter :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader HandleContext :> es) => Eff es ()
+    reportBatch mc mk n = for_ stats $ \prefix -> case batchTopic prefix mk of
+      Nothing -> logErrorL ["can't report batches for retention policy ", tshow mk]
+      Just t  -> publishStat mc t n
+
+runReporter :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader Options :> es) => Eff es ()
 runReporter = forever $ do
-  Options{optMQTTURL} <- asks opts
+  Options{optMQTTURL} <- ask
   catch (bracket connto disco loop) (\e -> logErrorL ["connecting to ", tshow optMQTTURL, " - ", tshow (e :: SomeException)])
   delaySeconds 5
 
   where
     connto = do
-      Options{..} <- asks opts
+      Options{..} <- ask
       liftIO $ connectURI mqttConfig{_protocol=optProtocol, _cleanSession=True, _connProps=[]} optMQTTURL
 
     disco = liftIO . normalDisconnect
@@ -187,21 +204,18 @@ runReporter = forever $ do
     loop mc = forever $ do
       delaySeconds 60
       c <- countSpool
-      Options{..} <- asks opts
+      Options{..} <- ask
       liftIO $ publishq mc (optMQTTPrefix <> "spool") (BC.pack $ show c) True QoS1 [PropMessageExpiryInterval 120]
 
-runInserter :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader HandleContext :> es) => WriteParams -> OpQueue -> Eff es ()
-runInserter wp opq = forever do
+runInserter :: (IOE :> es, LogFX :> es, SpoolFX :> es) => WriteParams -> OpQueue -> (Maybe Text -> Int -> Eff es ()) -> Eff es ()
+runInserter wp opq reportBatch = forever do
       todo <- (liftIO . atomically) (peekTQueue opq *> flushTQueue opq)
       mapM_ eachBatch . Map.assocs $ Map.fromListWith (<>) [(r, [(ts, l)]) | (ts, (r,l)) <- todo]
 
     where
         ls = encodeLines (scaleTo (wp ^. precision)) . fmap snd
         eachBatch (mk, todo) = do
-          let logfn = case todo of
-                        [_] -> logDbg
-                        _   -> logInfo
-          logfn $ "Inserting a batch of " <> tshow (length todo) <> maybe "" ((" r=" <>) . tshow) mk
+          reportBatch mk (length todo)
           tryBatch mk todo
         tryBatch mk todo = catch @_ @InfluxException mightInsert failed
           where
@@ -223,14 +237,11 @@ run :: Options -> IO ()
 run opts@Options{..} = do
   (InfluxerConf srcs) <- parseConfFile optConfFile
   let wp = writeParams (fromString optInfluxDB) & server.host .~ optInfluxDBHost
-  counter <- newTVarIO 0
   -- MQTT callbacks and async workers run Eff actions from other threads.
   runEff . withUnliftStrategy (ConcUnlift Persistent Unlimited) . runLogFX optVerbose . runNewSpool wp optSpoolFile $ do
-    tq <- liftIO newTQueueIO
-    runReader (HandleContext counter opts) do
-      async (runInserter wp tq) >>= link
+    runReader opts do
       async runReporter >>= link
-      mapConcurrently_ (runWatcher tq) srcs
+      mapConcurrently_ (runWatcher wp) srcs
 
 main :: IO ()
 main = run =<< execParser opts

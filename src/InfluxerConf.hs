@@ -8,11 +8,17 @@ module InfluxerConf (
   ValueParser(..),
   Namer(..),
   MeasurementNamer(..),
+  bestMatch,
+  processedTopic,
+  batchTopic,
+  parseInfluxerConf,
   parseConfFile) where
 
 import           Control.Applicative        ((<|>))
-import           Data.Foldable              (asum)
+import           Data.Foldable              (asum, for_)
+import           Data.Maybe                 (mapMaybe)
 import           Data.Text                  (Text, pack)
+import qualified Data.Text                  as T
 import           Data.Void                  (Void)
 import           Network.MQTT.Topic
 import           Network.URI
@@ -28,7 +34,8 @@ type Parser = Parsec Void Text
 
 newtype InfluxerConf = InfluxerConf [Source] deriving(Show, Eq)
 
-data Source = Source URI [Watch] deriving(Show, Eq)
+-- | A broker, an optional topic prefix for publishing stats about it, and what to watch on it.
+data Source = Source URI (Maybe Topic) [Watch] deriving(Show, Eq)
 
 data QOS = QOS0 | QOS1 | QOS2 deriving(Show, Eq, Bounded, Enum)
 
@@ -50,6 +57,50 @@ data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValuePa
 
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show, Eq)
 
+-- | The extractor for the first watch matching a topic.
+bestMatch :: Topic -> [Watch] -> Extractor
+bestMatch t = foldr exes IgnoreExtractor
+  where
+    exes w o = if watchFilter w `match` t then watchExtractor w else o
+
+watchFilter :: Watch -> Filter
+watchFilter (Watch _ f _) = f
+watchFilter (Match   f _) = f
+
+watchExtractor :: Watch -> Extractor
+watchExtractor (Watch _ _ e) = e
+watchExtractor (Match   _ e) = e
+
+-- | The topic under a stats prefix reporting how many messages were processed.
+processedTopic :: Topic -> Topic
+processedTopic = (<> "processed")
+
+-- | The topic under a stats prefix reporting batch sizes for a retention policy.
+--
+-- This is Nothing if the retention policy can't be used as part of a topic.
+batchTopic :: Topic -> Maybe Text -> Maybe Topic
+batchTopic prefix = maybe (Just base) (fmap (base <>) . mkTopic)
+  where base = prefix <> "batch"
+
+-- | The stats topics a source would receive back and try to insert.
+--
+-- Each such insert would report another batch, which would be received and
+-- inserted in turn, forever.
+selfConsumedStats :: Topic -> [Watch] -> [Topic]
+selfConsumedStats prefix ws = filter consumed (processedTopic prefix : batches)
+  where
+    batches = mapMaybe (batchTopic prefix) (Nothing : (Just <$> mapMaybe (retention . watchExtractor) ws))
+    consumed t = subscribed t && not (ignored (bestMatch t ws))
+    subscribed t = or [f `match` t | Watch _ f _ <- ws]
+
+    retention (ValEx _ _ _ (MeasurementNamer r _))        = r
+    retention (JSON (JSONPExtractor (MeasurementNamer r _) _ _)) = r
+    retention IgnoreExtractor                             = Nothing
+
+    ignored IgnoreExtractor        = True
+    ignored (ValEx IgnoreVal _ _ _) = True
+    ignored _                      = False
+
 parseInfluxerConf :: Parser InfluxerConf
 parseInfluxerConf = InfluxerConf <$> some parseSrc <* eof
 
@@ -66,7 +117,15 @@ bt a b = between (lexeme a) (lexeme b)
 parseSrc :: Parser Source
 parseSrc = do
   u <- maybe (fail "bad URL") pure . parseURI =<< lexeme "from" *> lexeme (some (noneOf ['\n', ' ']))
-  Source u <$> bt "{" "}" (some parseWatch)
+  stats <- option Nothing (Just <$> (lexeme "stats" *> lexeme statsPrefix))
+  ws <- bt "{" "}" (some parseWatch)
+  for_ stats $ \prefix -> case selfConsumedStats prefix ws of
+    [] -> pure ()
+    ts -> fail . T.unpack $ "source would consume its own stats on: " <> T.intercalate ", " (unTopic <$> ts)
+  pure (Source u stats ws)
+
+  where
+    statsPrefix = qstr >>= maybe (fail "bad stats prefix") pure . mkTopic
 
 symbp :: [(Parser b, a)] -> Parser a
 symbp = asum . map (\(p,a) -> a <$ lexeme p)

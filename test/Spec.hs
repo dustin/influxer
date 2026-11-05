@@ -19,6 +19,7 @@ import           Network.MQTT.Client        (QoS (..), SubOptions (..),
 import           Network.MQTT.Topic
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Network.URI                (parseURI)
+import           Text.Megaparsec            (errorBundlePretty, parse)
 import qualified Test.QuickCheck            as QC
 import           Test.QuickCheck            (Arbitrary (..), arbitrary,
                                              arbitraryBoundedEnum, suchThat)
@@ -35,7 +36,8 @@ testParser :: Assertion
 testParser = do
   cfg@(InfluxerConf srcs) <- parseConfFile "test/test.conf"
   let (Just u) = parseURI "mqtt://localhost/#influxerdev"
-  assertEqual "" (InfluxerConf [Source u
+      (Just u2) = parseURI "mqtt://localhost/#influxerstats"
+  assertEqual "" (InfluxerConf [Source u Nothing
                                 [Watch QOS2 "oro/+/tele/SENSOR"
                                  (JSON (JSONPExtractor (MeasurementNamer Nothing (FieldNum 1)) [] [
                                            ("total","/ENERGY/Total",AutoVal),
@@ -60,7 +62,10 @@ testParser = do
                                  Match "oro/str" (ValEx StringVal [] (ConstName "value")
                                                    (MeasurementNamer Nothing ((FieldNum 0)))),
                                  Watch QOS1 "sj/#" (ValEx AutoVal [] (ConstName "value")
-                                                                     (MeasurementNamer Nothing (FieldNum 0)))]])
+                                                                     (MeasurementNamer Nothing (FieldNum 0)))],
+                                Source u2 (Just "some/prefix")
+                                [Match "a/b" (ValEx AutoVal [] (ConstName "value")
+                                               (MeasurementNamer Nothing (FieldNum 0)))]])
     cfg
 
   let ss = foldMap subs srcs
@@ -76,6 +81,42 @@ testTrailing = do
   try (parseConfFile "test/trailing.conf") >>= \case
     Left (_ :: IOException) -> pure ()
     Right c -> assertFailure ("parsed: " <> show c)
+
+testBadStatsPrefix :: Assertion
+testBadStatsPrefix =
+  case parse parseInfluxerConf "test" "from mqtt://localhost/ stats \"a/+\" { watch \"x\" auto }" of
+    Left e  -> assertBool (errorBundlePretty e) ("bad stats prefix" `isInfixOf` errorBundlePretty e)
+    Right c -> assertFailure ("parsed: " <> show c)
+
+testSelfConsumedStats :: Assertion
+testSelfConsumedStats = do
+  rejected "catch-all" "s/processed" "watch \"#\" auto"
+  rejected "under the prefix" "s/processed, s/batch" "watch \"s/#\" int"
+  rejected "just the batch" "s/batch" "watch \"s/batch\" int"
+  rejected "retention batch" "s/batch/weekly" "watch \"s/batch/+\" int measurement=\"weekly\".\"m\""
+  rejected "broader than a match" "s/processed" "match \"s/batch\" ignore watch \"#\" auto"
+  allowed "elsewhere" "watch \"home/#\" auto"
+  allowed "ignored" "watch \"#\" ignore"
+  allowed "ignored first" "match \"s/#\" ignore watch \"#\" auto"
+  allowed "not subscribed" "match \"#\" auto watch \"home/#\" ignore"
+  allowed "not a batch we report" "watch \"s/batch/other\" auto"
+
+  where
+    conf ws = "from mqtt://localhost/ stats \"s\" { " <> ws <> " }"
+    rejected l t ws = case parse parseInfluxerConf "test" (conf ws) of
+      Left e  -> assertBool (l <> ": " <> errorBundlePretty e)
+                 (("consume its own stats on: " <> t) `isInfixOf` errorBundlePretty e)
+      Right c -> assertFailure (l <> " parsed: " <> show c)
+    allowed l ws = case parse parseInfluxerConf "test" (conf ws) of
+      Left e  -> assertFailure (l <> ": " <> errorBundlePretty e)
+      Right _ -> pure ()
+
+testStatTopics :: Assertion
+testStatTopics = do
+  assertEqual "" "some/prefix/processed" (unTopic (processedTopic "some/prefix"))
+  assertEqual "" (Just "some/prefix/batch") (unTopic <$> batchTopic "some/prefix" Nothing)
+  assertEqual "" (Just "some/prefix/batch/weekly") (unTopic <$> batchTopic "some/prefix" (Just "weekly"))
+  assertEqual "" Nothing (unTopic <$> batchTopic "some/prefix" (Just "a+b"))
 
 data MatchInput = MatchInput Extractor Topic [Watch] deriving (Show, Eq)
 
@@ -147,6 +188,9 @@ tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
   testCase "broken trailing conf" testTrailing,
+  testCase "bad stats prefix" testBadStatsPrefix,
+  testCase "stat topics" testStatTopics,
+  testCase "self-consumed stats" testSelfConsumedStats,
   QC.testProperty "best match" propBestMatch,
   QC.testProperty "parseValue" propParseValue,
   HH.testProperty "newlines are sufficiently eaten" propDeLine

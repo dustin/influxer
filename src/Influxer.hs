@@ -13,7 +13,7 @@ import qualified Data.Text.Encoding         as TE
 import           Database.InfluxDB          (Field (..), LineField)
 import           Effectful
 import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
-import           Network.MQTT.Topic         (Filter, Topic, match)
+import           Network.MQTT.Topic         (Filter)
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Text.Read                  (readEither)
 
@@ -61,15 +61,8 @@ parseValue BoolVal v
   | otherwise = Right $ FieldBool False
 parseValue IgnoreVal _  = Left "ignored"
 
-bestMatch :: Topic -> [Watch] -> Extractor
-bestMatch t = foldr exes IgnoreExtractor
-  where
-    exes (Watch _ p e) o = mf p e o
-    exes (Match   p e) o = mf p e o
-    mf p e o = if p `match` t then e else o
-
 subs :: Source -> [(Filter, SubOptions)]
-subs (Source _ ws) = [(t,baseOpts{_subQoS=q qos}) | (Watch qos t _) <- ws]
+subs (Source _ _ ws) = [(t,baseOpts{_subQoS=q qos}) | (Watch qos t _) <- ws]
   where
     baseOpts = subOptions{_retainHandling=SendOnSubscribeNew}
     q QOS0 = QoS0

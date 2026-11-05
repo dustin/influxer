@@ -122,6 +122,30 @@ have different client auth requirements, go for it.
 Each block starts with the literal string "from" followed by an MQTT
 URL and then the collection of watches for that source.
 
+A source may also declare a prefix for publishing stats about itself,
+by adding the literal string "stats" and a topic after the URL:
+
+```
+from mqtt://your.mqtt.broker/#clientid stats "influxer/stats" {
+    watch "home/#" auto
+}
+```
+
+The stats are published to that source's broker as retained messages
+with a two minute expiry (brokers only expire them when using `--mqtt5`):
+
+* `<prefix>/processed` is the total number of messages received from
+  the source since influxer started, updated once a minute.
+* `<prefix>/batch/<retention>` is the size of the most recent batch
+  inserted into the named retention policy, or `<prefix>/batch` if
+  the measurement doesn't specify one.
+
+A source that would insert its own stats is a config error, since each
+insert would report another batch, forever.  Keep the prefix outside
+of what you watch, or `ignore` it with an earlier `match`.  This check
+only looks within a source, so also avoid two sources on one broker
+each inserting the other's stats.
+
 Matches and watches are the same syntax and concept.  The only
 difference between `match` and `watch` is whether an explicit
 subscription is requested for the item.  As shown in quickstart, a
