@@ -156,7 +156,7 @@ handle opq counter ws unl _ PublishRequest{..} = unl $ do
 publishStat :: (IOE :> es, LogFX :> es) => MQTTClient -> Topic -> Int -> Eff es ()
 publishStat mc t v = catch @_ @MQTTException publish failed
   where
-    publish = liftIO $ publishq mc t (BC.pack $ show v) True QoS0 [PropMessageExpiryInterval 120]
+    publish = liftIO $ publishq mc t (BC.pack $ show v) False QoS0 [PropMessageExpiryInterval 120]
     failed e = logErrorL ["publishing stat to ", unTopic t, ": ", tshow e]
 
 runWatcher :: (IOE :> es, LogFX :> es, SpoolFX :> es, Reader Options :> es) => WriteParams -> Source -> Eff es ()

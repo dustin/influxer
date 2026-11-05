@@ -131,8 +131,7 @@ from mqtt://your.mqtt.broker/#clientid stats "influxer/stats" {
 }
 ```
 
-The stats are published to that source's broker as retained messages
-with a two minute expiry (brokers only expire them when using `--mqtt5`):
+The stats are published to that source's broker, and aren't retained:
 
 * `<prefix>/processed` is the total number of messages received from
   the source since influxer started, updated once a minute.
