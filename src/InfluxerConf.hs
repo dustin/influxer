@@ -77,10 +77,10 @@ processedTopic = (<> "processed")
 
 -- | The topic under a stats prefix reporting batch sizes for a retention policy.
 --
--- This is Nothing if the retention policy can't be used as part of a topic.
+-- Batches with no named retention policy are reported as "default".  This is
+-- Nothing if the retention policy can't be used as part of a topic.
 batchTopic :: Topic -> Maybe Text -> Maybe Topic
-batchTopic prefix = maybe (Just base) (fmap (base <>) . mkTopic)
-  where base = prefix <> "batch"
+batchTopic prefix = fmap ((prefix <> "batch") <>) . maybe (Just "default") mkTopic
 
 -- | The stats topics a source would receive back and try to insert.
 --

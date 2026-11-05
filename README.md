@@ -136,8 +136,8 @@ The stats are published to that source's broker, and aren't retained:
 * `<prefix>/processed` is the total number of messages received from
   the source since influxer started, updated once a minute.
 * `<prefix>/batch/<retention>` is the size of the most recent batch
-  inserted into the named retention policy, or `<prefix>/batch` if
-  the measurement doesn't specify one.
+  inserted into the named retention policy, or
+  `<prefix>/batch/default` if the measurement doesn't specify one.
 
 A source that would insert its own stats is a config error, since each
 insert would report another batch, forever.  Keep the prefix outside

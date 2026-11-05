@@ -91,10 +91,10 @@ testBadStatsPrefix =
 testSelfConsumedStats :: Assertion
 testSelfConsumedStats = do
   rejected "catch-all" "s/processed" "watch \"#\" auto"
-  rejected "under the prefix" "s/processed, s/batch" "watch \"s/#\" int"
-  rejected "just the batch" "s/batch" "watch \"s/batch\" int"
-  rejected "retention batch" "s/batch/weekly" "watch \"s/batch/+\" int measurement=\"weekly\".\"m\""
-  rejected "broader than a match" "s/processed" "match \"s/batch\" ignore watch \"#\" auto"
+  rejected "under the prefix" "s/processed, s/batch/default" "watch \"s/#\" int"
+  rejected "just the batch" "s/batch/default" "watch \"s/batch/default\" int"
+  rejected "retention batch" "s/batch/weekly" "watch \"s/batch/weekly\" int measurement=\"weekly\".\"m\""
+  rejected "broader than a match" "s/processed" "match \"s/batch/default\" ignore watch \"#\" auto"
   allowed "elsewhere" "watch \"home/#\" auto"
   allowed "ignored" "watch \"#\" ignore"
   allowed "ignored first" "match \"s/#\" ignore watch \"#\" auto"
@@ -114,7 +114,7 @@ testSelfConsumedStats = do
 testStatTopics :: Assertion
 testStatTopics = do
   assertEqual "" "some/prefix/processed" (unTopic (processedTopic "some/prefix"))
-  assertEqual "" (Just "some/prefix/batch") (unTopic <$> batchTopic "some/prefix" Nothing)
+  assertEqual "" (Just "some/prefix/batch/default") (unTopic <$> batchTopic "some/prefix" Nothing)
   assertEqual "" (Just "some/prefix/batch/weekly") (unTopic <$> batchTopic "some/prefix" (Just "weekly"))
   assertEqual "" Nothing (unTopic <$> batchTopic "some/prefix" (Just "a+b"))
 
