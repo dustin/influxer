@@ -16,7 +16,9 @@ import           Data.Text                  (Text, pack)
 import           Data.Void                  (Void)
 import           Network.MQTT.Topic
 import           Network.URI
-import           Text.Megaparsec            (Parsec, between, manyTill, noneOf, option, parse, sepBy, some, try)
+import           Text.Megaparsec            (Parsec, between, eof, manyTill,
+                                             noneOf, option, parse, sepBy, some,
+                                             try)
 import           Text.Megaparsec.Char       (char, space1)
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Error      (errorBundlePretty)
@@ -49,7 +51,7 @@ data JSONPExtractor = JSONPExtractor MeasurementNamer Tags [(Text, Text, ValuePa
 data ValueParser = AutoVal | IntVal | FloatVal | BoolVal | StringVal | IgnoreVal deriving(Show, Eq)
 
 parseInfluxerConf :: Parser InfluxerConf
-parseInfluxerConf = InfluxerConf <$> some parseSrc
+parseInfluxerConf = InfluxerConf <$> some parseSrc <* eof
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme (L.space space1 (L.skipLineComment "//") (L.skipBlockComment "/*" "*/"))

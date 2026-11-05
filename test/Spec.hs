@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
+import           Control.Exception
 import           Control.Monad              (replicateM)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.ByteString.Lazy.Char8 as BC
@@ -12,15 +14,17 @@ import qualified Hedgehog.Corpus            as HH
 import qualified Hedgehog.Gen               as Gen
 import qualified Hedgehog.Range             as Range
 import           Network.MQTT.Arbitrary
-import           Network.MQTT.Client        (QoS (..), SubOptions (..), subOptions)
+import           Network.MQTT.Client        (QoS (..), SubOptions (..),
+                                             subOptions)
 import           Network.MQTT.Topic
 import           Network.MQTT.Types         (RetainHandling (..))
 import           Network.URI                (parseURI)
-import           Test.QuickCheck            (Arbitrary (..), arbitrary, arbitraryBoundedEnum, suchThat)
 import qualified Test.QuickCheck            as QC
+import           Test.QuickCheck            (Arbitrary (..), arbitrary,
+                                             arbitraryBoundedEnum, suchThat)
 import           Test.Tasty
-import           Test.Tasty.HUnit
 import qualified Test.Tasty.Hedgehog        as HH
+import           Test.Tasty.HUnit
 import qualified Test.Tasty.QuickCheck      as QC
 
 import           Influxer
@@ -66,6 +70,12 @@ testParser = do
                   ("oro/s/blah", baseOpts{_subQoS = QoS0}),
                   ("oro/boo", baseOpts{_subQoS = QoS2}),
                   ("sj/#", baseOpts {_subQoS = QoS1})] ss
+
+testTrailing :: Assertion
+testTrailing = do
+  try (parseConfFile "test/trailing.conf") >>= \case
+    Left (_ :: IOException) -> pure ()
+    Right c -> assertFailure ("parsed: " <> show c)
 
 data MatchInput = MatchInput Extractor Topic [Watch] deriving (Show, Eq)
 
@@ -136,6 +146,7 @@ propDeLine = HH.property $ do
 tests :: [TestTree]
 tests = [
   testCase "example conf" testParser,
+  testCase "broken trailing conf" testTrailing,
   QC.testProperty "best match" propBestMatch,
   QC.testProperty "parseValue" propParseValue,
   HH.testProperty "newlines are sufficiently eaten" propDeLine
