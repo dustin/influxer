@@ -98,24 +98,32 @@ handle opq counter ws unl _ PublishRequest{..} = unl $ do
 
     extract _ IgnoreExtractor = Left "unexpected message"
 
-    extract ts (ValEx vp tags fld mn) = case parseValue vp v of
-                              Left x  -> Left x
-                              Right v' -> let (retention, measurement) = mname mn in
-                                            Right (retention, Line measurement (Map.fromList $ mvals <$> tags)
-                                                              (Map.singleton (fk $ nname fld) v') (Just ts))
+    extract ts (ValEx vp tags fld mn) = do
+      v' <- parseValue vp v
+      (retention, measurement) <- mname mn
+      tags' <- traverse mvals tags
+      fld' <- nname fld
+      pure (retention, Line measurement (Map.fromList tags') (Map.singleton (fk fld') v') (Just ts))
 
-    extract ts (JSON (JSONPExtractor m tags pats)) = jsonate ts (mname m) (mvals <$> tags) pats =<< eitherDecode v
+    extract ts (JSON (JSONPExtractor m tags pats)) = do
+      m' <- mname m
+      tags' <- traverse mvals tags
+      jsonate ts m' tags' pats =<< eitherDecode v
 
-    mname :: MeasurementNamer -> (Maybe Text, Measurement)
-    mname (MeasurementNamer x n) = (x, fk $ nname n)
+    mname :: MeasurementNamer -> Either String (Maybe Text, Measurement)
+    mname (MeasurementNamer x n) = (x,) . fk <$> nname n
 
-    nname :: Namer -> Text
-    nname (ConstName t') = t'
-    nname (FieldNum 0)   = txtt
-    nname (FieldNum x)   = splitOn "/" txtt !! (x - 1)
+    -- A filter can't promise a field exists (e.g., a/# also matches a), so this has to be
+    -- resolved before the entry is queued, where the failure can be handled per message.
+    nname :: Namer -> Either String Text
+    nname (ConstName t') = Right t'
+    nname (FieldNum 0)   = Right txtt
+    nname (FieldNum x)   = case drop (x - 1) (splitOn "/" txtt) of
+                             (f:_) -> Right f
+                             []    -> Left ("topic has no field $" <> show x)
 
-    mvals :: (Text, Namer) -> (Key, Key)
-    mvals (a,m) = (fk a, fk . nname $ m)
+    mvals :: (Text, Namer) -> Either String (Key, Key)
+    mvals (a,m) = (fk a,) . fk <$> nname m
 
     -- extract all the desired fields
     jsonate :: UTCTime -> (Maybe Text, Measurement)
