@@ -4,6 +4,7 @@ import           Control.Concurrent.STM     (TQueue, TVar, atomically, flushTQue
                                              peekTQueue, readTVar, swapTVar, writeTQueue)
 import           Control.Lens
 import           Control.Monad              (forever)
+import           Control.Exception          (IOException)
 import           Control.Monad.Catch        (SomeException, bracket, catch)
 import           Data.Aeson                 (Value (..), eitherDecode)
 import qualified Data.ByteString.Lazy       as BL
@@ -225,7 +226,10 @@ runInserter wp opq reportBatch = forever do
         eachBatch (mk, todo) = do
           reportBatch mk (length todo)
           tryBatch mk todo
-        tryBatch mk todo = catch @_ @InfluxException mightInsert failed
+        -- writeByteString reports some server errors (e.g. InfluxDB's
+        -- {"error":"timeout"}) with fail, an IOException, not an
+        -- InfluxException.  Spool on either rather than killing the process.
+        tryBatch mk todo = catch @_ @IOException (catch @_ @InfluxException mightInsert (failed . show)) (failed . show)
           where
 
             mightInsert = do
@@ -235,7 +239,7 @@ runInserter wp opq reportBatch = forever do
                 Just _  -> pure ()
 
             failed ex = do
-              let errs = (deLine . show) ex
+              let errs = deLine ex
               logErr $ "influxdb live error " <> tshow errs
               insertSpool mk todo errs
 

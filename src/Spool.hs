@@ -8,6 +8,7 @@ import           Control.Concurrent         (threadDelay)
 import           Control.Concurrent.Async   (Async)
 import           Control.Lens
 import           Control.Monad              (forever, unless, when)
+import           Control.Exception          (IOException)
 import           Control.Monad.Catch        (bracket, catch)
 import qualified Data.ByteString.Lazy       as BL
 import qualified Data.Map.Strict            as Map
@@ -82,17 +83,19 @@ runInserter wp conn = forever insertSome
         liftIO $ execute_ conn "pragma incremental_vacuum(100)"
         sleep 60000000
 
+    -- IOException too: writeByteString fails with one for some server
+    -- errors, such as InfluxDB's {"error":"timeout"}.
     eachBatch (mk, rows) =
-        catch @_ @InfluxException (do
+        catch @_ @IOException (catch @_ @InfluxException (do
                 liftIO $ writeByteString (wp & retentionPolicy .~ (fk <$> mk)) . foldMap ((<>"\n") . snd) $ rows
                 liftIO $ withTransaction conn $ executeMany conn removeStmt (map (Only . fst) rows)
                 unless (null rows) $ logInfo $ "retry: processed backlog of " <> (T.pack . show $ length rows)
-            ) (reschedule (map fst rows))
+            ) (reschedule (map fst rows) . show)) (reschedule (map fst rows) . show)
 
     reschedule ids e = do
-      logError $ "retry: retry batch insertion error: " <> (T.pack . deLine . show) e
+      logError $ "retry: retry batch insertion error: " <> (T.pack . deLine) e
       ts <- liftIO getCurrentTime
-      liftIO $ withTransaction conn $ executeMany conn reschedStmt [(ts,(deLine . show) e,r) | r <- ids]
+      liftIO $ withTransaction conn $ executeMany conn reschedStmt [(ts,deLine e,r) | r <- ids]
       sleep 15000000 -- slow down processing when we're rescheduling.
 
     fk :: IsString k => Text -> k
